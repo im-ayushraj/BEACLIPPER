@@ -129,8 +129,10 @@ class TestWebAPIHardening(unittest.TestCase):
         """Test /api/process rejects second concurrent submission from same user."""
         mock_preflight.return_value = {"id": "UF8uR6Z6KLc", "title": "Jobs Talk", "duration": 180.0}
         
+        import uuid
+        test_uid = f"user_duplicate_test_{uuid.uuid4().hex[:8]}"
         # Mock authenticated user token
-        with patch("web.verify_clerk_token", return_value={"sub": "user_duplicate_test"}):
+        with patch("web.verify_clerk_token", return_value={"sub": test_uid}):
             headers = {"Authorization": "Bearer mock_token_123"}
             # First request succeeds
             res1 = self.client.post("/api/process", json={"url": "https://www.youtube.com/watch?v=UF8uR6Z6KLc"}, headers=headers)

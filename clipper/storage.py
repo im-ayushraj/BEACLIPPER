@@ -83,6 +83,40 @@ def upload_clip_to_storage(
         return None
 
 
+def save_job_to_cloud(
+    job_id: str,
+    user_id: str,
+    url: str,
+    status: str = "processing",
+    progress_percent: int = 5,
+    stage: str = "video",
+    error: Optional[str] = None
+) -> bool:
+    """
+    Records or updates job lifecycle in Supabase public.jobs table.
+    """
+    client = get_supabase_client()
+    if not client:
+        return False
+
+    try:
+        data = {
+            "job_id": job_id,
+            "user_id": user_id,
+            "url": url,
+            "status": status,
+            "progress_percent": progress_percent,
+            "stage": stage
+        }
+        if error:
+            data["error"] = str(error)[:500]
+        client.table("jobs").upsert(data, on_conflict="job_id").execute()
+        return True
+    except Exception as e:
+        print(f"[Supabase DB] Warning syncing job {job_id}: {e}")
+        return False
+
+
 def save_clips_to_db(
     user_id: str,
     job_id: str,

@@ -36,6 +36,7 @@ from clipper.queue_manager import JobQueueManager
 from clipper.storage import (
     upload_clip_to_storage,
     save_clips_to_db,
+    save_job_to_cloud,
     get_user_clips_from_cloud,
     is_supabase_enabled
 )
@@ -314,6 +315,16 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             db_session.close()
         except Exception:
             pass
+
+        # Sync error state to Supabase
+        if is_supabase_enabled():
+            save_job_to_cloud(
+                job_id=job_id,
+                user_id=user_id,
+                url=url,
+                status="failed",
+                error=str(e)
+            )
 
 # Register worker with Queue Manager
 queue_manager.set_worker(run_pipeline_task)
@@ -748,6 +759,17 @@ def process_video(
         db_s.close()
     except Exception as db_e:
         print(f"[DB] Warning creating job record: {db_e}")
+
+    # Real-time sync to Supabase Cloud Database if enabled
+    if is_supabase_enabled():
+        save_job_to_cloud(
+            job_id=job_id,
+            user_id=user_id,
+            url=safe_url,
+            status="processing",
+            progress_percent=5,
+            stage="video"
+        )
 
     job, started_immediately = queue_manager.add_job(
         job_id=job_id,
