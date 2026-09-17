@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Video Clipper V1</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --success: #10b981;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+      --border: #334155;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+    .container {
+      max-width: 800px;
+      width: 100%;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    h1 {
+      font-size: 2rem;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      font-weight: 800;
+      color: #fff;
+    }
+    .input-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .input-group {
+      display: flex;
+      gap: 12px;
+    }
+    input[type="text"] {
+      flex: 1;
+      padding: 14px 16px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #0b1120;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    input[type="text"]:focus {
+      border-color: var(--accent);
+    }
+    button {
+      padding: 14px 28px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+    button:hover:not(:disabled) {
+      background: var(--accent-hover);
+    }
+    button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    .progress-section {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: none;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .progress-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .stages-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .stage-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 1rem;
+      color: var(--text-muted);
+    }
+    .stage-item.active {
+      color: var(--accent);
+      font-weight: 600;
+    }
+    .stage-item.done {
+      color: var(--success);
+      font-weight: 600;
+    }
+    .status-msg {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-style: italic;
+      margin-top: 6px;
+    }
+    .error-box {
+      background: #450a0a;
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 14px;
+      border-radius: 8px;
+      display: none;
+    }
+    .clips-section {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .clips-title {
+      font-size: 1.4rem;
+      font-weight: 700;
+    }
+    .clip-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .clip-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .clip-name {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .clip-score {
+      background: #1e3a8a;
+      color: #60a5fa;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.85rem;
+      font-weight: 700;
+    }
+    .clip-meta {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      display: flex;
+      gap: 16px;
+    }
+    .clip-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.3;
+    }
+    .clip-reason {
+      font-size: 0.9rem;
+      color: #94a3b8;
+      font-style: italic;
+    }
+    .clip-explanation {
+      font-size: 0.95rem;
+      color: #e2e8f0;
+      background: #0b1120;
+      border-left: 3px solid var(--accent);
+      padding: 10px 14px;
+      border-radius: 0 8px 8px 0;
+      line-height: 1.45;
+    }
+    .tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .tag-badge {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      color: #93c5fd;
+      padding: 3px 10px;
+      border-radius: 9999px;
+      font-size: 0.8rem;
+      font-weight: 600;
+    }
+    video {
+      width: 100%;
+      border-radius: 8px;
+      background: #000;
+      max-height: 420px;
+    }
+    .download-btn {
+      align-self: flex-start;
+      font-size: 0.85rem;
+      padding: 8px 16px;
+      background: #334155;
+      color: #f1f5f9;
+      text-decoration: none;
+      border-radius: 6px;
+      transition: background 0.2s;
+    }
+    .download-btn:hover {
+      background: #475569;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>AI VIDEO CLIPPER</h1>
+
+    <div class="input-card">
+      <div class="input-group">
+        <input
+          type="text"
+          id="urlInput"
+          placeholder="https://www.youtube.com/watch?v=..."
+          value=""
+        />
+        <button id="generateBtn" onclick="startClipping()">Generate Clips</button>
+      </div>
+      <div id="errorBox" class="error-box"></div>
+    </div>
+
+    <div id="progressSection" class="progress-section">
+      <div class="progress-title">
+        <span id="spinner">⏳</span> Processing...
+      </div>
+      <div class="stages-list">
+        <div id="stage-video" class="stage-item">Video <span class="check">⋯</span></div>
+        <div id="stage-transcript" class="stage-item">Transcript <span class="check">⋯</span></div>
+        <div id="stage-analysis" class="stage-item">Analysis <span class="check">⋯</span></div>
+        <div id="stage-clips" class="stage-item">Clips <span class="check">⋯</span></div>
+      </div>
+      <div id="statusMessage" class="status-msg">Initializing pipeline...</div>
+    </div>
+
+    <div id="clipsSection" class="clips-section" style="display: none;">
+      <h2 class="clips-title">Generated Clips:</h2>
+      <div id="clipsContainer" style="display: flex; flex-direction: column; gap: 20px;"></div>
+    </div>
+  </div>
+
+  <script>
+    let pollInterval = null;
+
+    async function startClipping() {
+      const urlInput = document.getElementById("urlInput");
+      const url = urlInput.value.trim();
+      const errorBox = document.getElementById("errorBox");
+      const generateBtn = document.getElementById("generateBtn");
+      const progressSection = document.getElementById("progressSection");
+      const clipsSection = document.getElementById("clipsSection");
+      const clipsContainer = document.getElementById("clipsContainer");
+
+      errorBox.style.display = "none";
+      if (!url) {
+        errorBox.innerText = "Please enter a valid YouTube URL.";
+        errorBox.style.display = "block";
+        return;
+      }
+
+      generateBtn.disabled = true;
+      progressSection.style.display = "flex";
+      clipsSection.style.display = "none";
+      clipsContainer.innerHTML = "";
+      resetStages();
+
+      try {
+        const response = await fetch("/api/process", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ url: url, count: 10 })
+        });
+
+        if (!response.ok) {
+          const errData = await response.json();
+          throw new Error(errData.detail || "Failed to start clipping task");
+        }
+
+        const data = await response.json();
+        pollJobStatus(data.job_id);
+      } catch (err) {
+        showError(err.message);
+        generateBtn.disabled = false;
+      }
+    }
+
+    function resetStages() {
+      ["video", "transcript", "analysis", "clips"].forEach(id => {
+        const el = document.getElementById(`stage-${id}`);
+        el.className = "stage-item";
+        el.querySelector(".check").textContent = "⋯";
+      });
+      document.getElementById("statusMessage").textContent = "Starting pipeline...";
+    }
+
+    function pollJobStatus(jobId) {
+      if (pollInterval) clearInterval(pollInterval);
+
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/status/${jobId}`);
+          if (!res.ok) return;
+
+          const job = await res.json();
+          updateProgressUI(job);
+
+          if (job.status === "completed") {
+            clearInterval(pollInterval);
+            document.getElementById("generateBtn").disabled = false;
+            displayClips(job.clips);
+          } else if (job.status === "error") {
+            clearInterval(pollInterval);
+            document.getElementById("generateBtn").disabled = false;
+            showError(job.error || "An error occurred during processing");
+          }
+        } catch (e) {
+          console.error("Polling error", e);
+        }
+      }, 1500);
+    }
+
+    function updateProgressUI(job) {
+      document.getElementById("statusMessage").textContent = job.current_message || "";
+      const stages = ["video", "transcript", "analysis", "clips"];
+
+      stages.forEach(s => {
+        const el = document.getElementById(`stage-${s}`);
+        const check = el.querySelector(".check");
+
+        if (job.stages_done[s]) {
+          el.className = "stage-item done";
+          check.textContent = "✓";
+        } else if (job.stage === s) {
+          el.className = "stage-item active";
+          check.textContent = "⚙";
+        } else {
+          el.className = "stage-item";
+          check.textContent = "⋯";
+        }
+      });
+    }
+
+    function displayClips(clips) {
+      const clipsSection = document.getElementById("clipsSection");
+      const container = document.getElementById("clipsContainer");
+      container.innerHTML = "";
+
+      if (!clips || clips.length === 0) {
+        container.innerHTML = "<p>No clips generated.</p>";
+      } else {
+        clips.forEach((clip, index) => {
+          const card = document.createElement("div");
+          card.className = "clip-card";
+          const tagsHtml = (clip.tags || []).map(t => `<span class="tag-badge">${t}</span>`).join("");
+          const title = clip.title || `Clip ${index + 1}`;
+          const explanation = clip.explanation || "";
+
+          card.innerHTML = `
+            <div class="clip-header">
+              <span class="clip-name">Clip ${index + 1} (${clip.file})</span>
+              <span class="clip-score">★ ${clip.score} / 10</span>
+            </div>
+            <div class="clip-title">${title}</div>
+            <div class="clip-meta">
+              <span>⏱ ${clip.start}s – ${clip.end}s</span>
+              <span>⌛ Duration: ${clip.duration}s</span>
+            </div>
+            ${tagsHtml ? `<div class="tags-container">${tagsHtml}</div>` : ""}
+            ${explanation ? `<div class="clip-explanation"><strong>Context:</strong> ${explanation}</div>` : ""}
+            <p class="clip-reason"><strong>Viral Hook:</strong> ${clip.reason || ""}</p>
+            <video controls preload="metadata" src="/output/${clip.file}"></video>
+            <a href="/output/${clip.file}" download="${clip.file}" class="download-btn">⬇ Download Clip</a>
+          `;
+          container.appendChild(card);
+        });
+      }
+
+      clipsSection.style.display = "flex";
+    }
+
+    function showError(msg) {
+      const errorBox = document.getElementById("errorBox");
+      errorBox.textContent = msg;
+      errorBox.style.display = "block";
+    }
+  </script>
+</body>
+</html>

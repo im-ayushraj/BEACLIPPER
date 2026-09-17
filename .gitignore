@@ -1,0 +1,51 @@
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+*.env
+cookies.txt
+
+# Allow example configs
+!*.example
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+
+# Node.js dependencies and builds
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# Python bytecode & cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Media outputs and temp processing directories
+output/
+temp_downloads/
+temp_uploads/
+*.mp4
+*.mkv
+*.webm
+*.avi
+*.mov
+*.wav
+*.mp3
+*.zip
+
+# Operating System & IDE files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
