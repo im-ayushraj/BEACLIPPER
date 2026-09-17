@@ -44,6 +44,12 @@ interface Stats {
   byUtmSource: Record<string, number>;
 }
 
+interface DbStatus {
+  connected: boolean;
+  type: "postgres" | "memory";
+  error?: string;
+}
+
 export default function AdminWaitlistPage() {
   const [adminKey, setAdminKey] = useState<string>("");
   const [isKeyEntered, setIsKeyEntered] = useState<boolean>(false);
@@ -53,6 +59,7 @@ export default function AdminWaitlistPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [total, setTotal] = useState<number>(0);
+  const [dbStatus, setDbStatus] = useState<DbStatus | null>(null);
 
   // Filters & Search
   const [search, setSearch] = useState("");
@@ -110,6 +117,9 @@ export default function AdminWaitlistPage() {
       setStats(data.stats);
       setSubscribers(data.subscribers || []);
       setTotal(data.total || 0);
+      if (data.dbStatus) {
+        setDbStatus(data.dbStatus);
+      }
       setLoading(false);
     } catch (err) {
       setError("Network error communicating with admin API.");
@@ -183,11 +193,22 @@ export default function AdminWaitlistPage() {
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-6">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">Waitlist Leads Dashboard</h1>
-              <span className="rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 text-[10px] font-bold">
+              <span className="rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-0.5 text-[10px] font-bold">
                 Admin Secure
               </span>
+              {dbStatus?.connected ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-emerald-400 border border-emerald-500/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  PostgreSQL Active
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-500/10 px-2.5 py-0.5 text-[10px] font-semibold text-amber-400 border border-amber-500/20">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                  Memory Fallback (Not Persistent on Vercel)
+                </span>
+              )}
             </div>
             <p className="text-xs sm:text-sm text-zinc-400 mt-1">
               Real-time database records and UTM attribution for pre-launch creator registrations.
@@ -220,6 +241,24 @@ export default function AdminWaitlistPage() {
             </button>
           </div>
         </div>
+
+        {/* Database Warning Banner if on Memory Fallback */}
+        {dbStatus && !dbStatus.connected && (
+          <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs text-amber-300 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-bold text-white text-sm">Supabase PostgreSQL Connection Not Active</div>
+                <p className="text-amber-200/80 mt-0.5">
+                  {dbStatus.error || "DATABASE_URL is not connected. Leads will reset whenever Vercel serverless containers restart."}
+                </p>
+                <p className="text-[11px] text-amber-400/90 mt-1">
+                  Fix: Add the valid Supabase PostgreSQL URI to <strong>Vercel Settings → Environment Variables → DATABASE_URL</strong> and redeploy.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Top Metrics Cards */}
         {stats && (

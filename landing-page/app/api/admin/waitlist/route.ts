@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { querySubscribers, getStats } from "@/lib/db";
+import { querySubscribers, getStats, getDatabaseStatus } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
   const offset = Math.max(0, parseInt(searchParams.get("offset") || "0", 10));
 
   try {
-    const [stats, queryResult] = await Promise.all([
+    const [stats, queryResult, dbStatus] = await Promise.all([
       getStats(),
       querySubscribers({
         search,
@@ -46,6 +46,7 @@ export async function GET(req: NextRequest) {
         limit,
         offset,
       }),
+      getDatabaseStatus(),
     ]);
 
     return NextResponse.json({
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
       total: queryResult.total,
       limit,
       offset,
+      dbStatus,
     });
   } catch (err: any) {
     console.error("[Admin API] Error loading waitlist:", err);

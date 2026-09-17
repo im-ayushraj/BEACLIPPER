@@ -1,4 +1,6 @@
 import { Pool } from "pg";
+import fs from "fs";
+import path from "path";
 
 export interface WaitlistSubscriber {
   id: string;
@@ -19,10 +21,45 @@ export interface WaitlistSubscriber {
   updated_at: string;
 }
 
+const DATA_DIR = path.join(process.cwd(), "data");
+const STORAGE_FILE = path.join(DATA_DIR, "waitlist.json");
+
+function loadFromDisk(): Map<string, WaitlistSubscriber> {
+  const map = new Map<string, WaitlistSubscriber>();
+  try {
+    if (fs.existsSync(STORAGE_FILE)) {
+      const raw = fs.readFileSync(STORAGE_FILE, "utf-8");
+      const list = JSON.parse(raw);
+      if (Array.isArray(list)) {
+        for (const item of list) {
+          if (item && item.email) {
+            map.set(item.email.toLowerCase().trim(), item);
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[DB] Failed to load waitlist from disk:", err);
+  }
+  return map;
+}
+
+function saveToDisk(map: Map<string, WaitlistSubscriber>) {
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+    const list = Array.from(map.values());
+    fs.writeFileSync(STORAGE_FILE, JSON.stringify(list, null, 2), "utf-8");
+  } catch (err) {
+    // In serverless environments, file writing may be restricted
+  }
+}
+
 let pool: Pool | null = null;
 const globalRef = globalThis as any;
 if (!globalRef.__waitlist_memoryStore) {
-  globalRef.__waitlist_memoryStore = new Map<string, WaitlistSubscriber>();
+  globalRef.__waitlist_memoryStore = loadFromDisk();
 }
 const memoryStore: Map<string, WaitlistSubscriber> = globalRef.__waitlist_memoryStore;
 
@@ -424,3 +461,33 @@ export async function getAllForExport(): Promise<WaitlistSubscriber[]> {
     return Array.from(memoryStore.values());
   }
 }
+
+export async function getDatabaseStatus(): Promise<{
+  connected: boolean;
+  type: "postgres" | "memory";
+  error?: string;
+}> {
+  const p = getPool();
+  if (!p) {
+    return {
+      connected: false,
+      type: "memory",
+      error: "DATABASE_URL environment variable is not configured in Vercel.",
+    };
+  }
+
+  try {
+    await p.query("SELECT 1");
+    return {
+      connected: true,
+      type: "postgres",
+    };
+  } catch (err: any) {
+    return {
+      connected: false,
+      type: "memory",
+      error: err.message || "Failed to connect to PostgreSQL.",
+    };
+  }
+}
+
