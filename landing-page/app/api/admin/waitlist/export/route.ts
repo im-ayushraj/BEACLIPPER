@@ -5,17 +5,16 @@ export const dynamic = "force-dynamic";
 
 function isAuthorized(req: NextRequest): boolean {
   const adminSecret = process.env.ADMIN_SECRET_KEY || "clipper_admin_secret_2026";
-  const validSecrets = new Set([adminSecret, "clipper_admin_secret_2026", "clipper_admin_secret_2026"]);
   const authHeader = req.headers.get("authorization");
   const xAdminKey = req.headers.get("x-admin-key");
   const queryKey = req.nextUrl.searchParams.get("key");
 
-  if (xAdminKey && validSecrets.has(xAdminKey)) return true;
-  if (queryKey && validSecrets.has(queryKey)) return true;
+  if (xAdminKey && xAdminKey === adminSecret) return true;
+  if (queryKey && queryKey === adminSecret) return true;
 
   if (authHeader && authHeader.startsWith("Bearer ")) {
     const token = authHeader.split(" ")[1].trim();
-    if (validSecrets.has(token)) return true;
+    if (token === adminSecret) return true;
   }
 
   return false;
