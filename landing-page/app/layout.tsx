@@ -35,7 +35,8 @@ export default function RootLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const gaMeasurementId = process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID;
+  const gaMeasurementId =
+    process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID || "G-1KHVMPBYPT";
   const metaPixelId = process.env.NEXT_PUBLIC_META_PIXEL_ID;
 
   return (
