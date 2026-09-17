@@ -30,10 +30,28 @@ function getPool(): Pool | null {
   const dbUrl = process.env.DATABASE_URL;
   if (!dbUrl) return null;
   if (!pool) {
+    let sanitizedUrl = dbUrl;
+    try {
+      const match = dbUrl.match(/^postgres(?:ql)?:\/\/([^:]+):(.+)@([^@]+)$/);
+      if (match) {
+        const user = match[1];
+        const passAndRest = match[2];
+        const lastAtIndex = passAndRest.lastIndexOf("@");
+        if (lastAtIndex > -1) {
+          const pass = passAndRest.substring(0, lastAtIndex);
+          const hostPortDb = passAndRest.substring(lastAtIndex + 1);
+          sanitizedUrl = `postgresql://${user}:${encodeURIComponent(pass)}@${hostPortDb}`;
+        }
+      }
+    } catch {
+      sanitizedUrl = dbUrl;
+    }
+
     pool = new Pool({
-      connectionString: dbUrl,
-      ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : undefined,
+      connectionString: sanitizedUrl,
+      ssl: { rejectUnauthorized: false },
       max: 10,
+      connectionTimeoutMillis: 3000,
     });
   }
   return pool;
@@ -41,9 +59,13 @@ function getPool(): Pool | null {
 
 // Auto-create table if postgres is connected
 let tableInitialized = false;
+let lastInitAttempt = 0;
 export async function initDb(): Promise<void> {
   const p = getPool();
   if (!p || tableInitialized) return;
+  const now = Date.now();
+  if (now - lastInitAttempt < 15000) return; // cooldown to avoid repeated blocking timeouts
+  lastInitAttempt = now;
 
   const ddl = `
     CREATE TABLE IF NOT EXISTS waitlist_subscribers (
@@ -206,7 +228,7 @@ export async function querySubscribers(params: {
   const offset = params.offset || 0;
   const p = getPool();
 
-  if (!p) {
+  function queryFromMemory(): { subscribers: WaitlistSubscriber[]; total: number } {
     let list = Array.from(memoryStore.values());
     if (params.search) {
       const q = params.search.toLowerCase();
@@ -223,6 +245,10 @@ export async function querySubscribers(params: {
       subscribers: list.slice(offset, offset + limit),
       total: list.length,
     };
+  }
+
+  if (!p) {
+    return queryFromMemory();
   }
 
   try {
@@ -280,8 +306,8 @@ export async function querySubscribers(params: {
 
     return { subscribers, total };
   } catch (err) {
-    console.error("[DB] Query error:", err);
-    return { subscribers: [], total: 0 };
+    console.error("[DB] Query error, falling back to memory:", err);
+    return queryFromMemory();
   }
 }
 

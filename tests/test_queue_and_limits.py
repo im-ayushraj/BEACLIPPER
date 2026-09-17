@@ -127,7 +127,7 @@ class TestWebAPIHardening(unittest.TestCase):
     @patch("web.get_video_metadata_preflight")
     def test_process_rejects_duplicate_active_job(self, mock_preflight):
         """Test /api/process rejects second concurrent submission from same user."""
-        mock_preflight.return_value = {"id": "UF8uR6Z6KLc", "title": "Jobs Talk", "duration": 900.0}
+        mock_preflight.return_value = {"id": "UF8uR6Z6KLc", "title": "Jobs Talk", "duration": 180.0}
         
         # Mock authenticated user token
         with patch("web.verify_clerk_token", return_value={"sub": "user_duplicate_test"}):
