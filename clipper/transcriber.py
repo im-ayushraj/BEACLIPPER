@@ -104,35 +104,54 @@ def fetch_youtube_transcript(video_id: str) -> List[Dict[str, Any]]:
 
 def transcribe_audio_gemini(audio_path: str, api_key: str) -> List[Dict[str, Any]]:
     """
-    Fallback audio transcription using Gemini 2.5 Flash multimodal capabilities.
+    Audio transcription using Gemini multimodal capabilities with model fallbacks.
     """
     import google.generativeai as genai
 
     genai.configure(api_key=api_key)
     audio_file = genai.upload_file(audio_path)
+    
+    models_to_try = [
+        "gemini-2.5-flash",
+        "gemini-1.5-flash",
+        "gemini-flash-latest",
+        "gemini-2.0-flash",
+    ]
+    
+    prompt = (
+        "Transcribe this entire audio file with accurate timestamps for each spoken segment. "
+        "Return a STRICT JSON object with no commentary:\n"
+        "{\n"
+        '  "segments": [\n'
+        '    {"start": float, "end": float, "text": string}\n'
+        '  ]\n'
+        "}\n"
+        "Ensure timestamps accurately align with spoken words."
+    )
+
+    last_err = None
     try:
-        model = genai.GenerativeModel("gemini-3.5-flash")
-        prompt = (
-            "Transcribe this entire audio file with accurate timestamps for each spoken segment. "
-            "Return a STRICT JSON object with no commentary:\n"
-            "{\n"
-            '  "segments": [\n'
-            '    {"start": float, "end": float, "text": string}\n'
-            "  ]\n"
-            "}\n"
-            "Ensure timestamps accurately align with spoken words."
-        )
-        response = model.generate_content([prompt, audio_file])
-        parsed = parse_json_safely(response.text)
-        raw_segments = parsed.get("segments", [])
-        segments = []
-        for s in raw_segments:
-            start = round(float(s["start"]), 2)
-            end = round(float(s["end"]), 2)
-            text = str(s["text"]).strip()
-            if text:
-                segments.append({"start": start, "end": max(end, round(start + 0.5, 2)), "text": text})
-        return segments
+        for model_name in models_to_try:
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content([prompt, audio_file])
+                parsed = parse_json_safely(response.text)
+                raw_segments = parsed.get("segments", [])
+                segments = []
+                for s in raw_segments:
+                    start = round(float(s["start"]), 2)
+                    end = round(float(s["end"]), 2)
+                    text = str(s["text"]).strip()
+                    if text:
+                        segments.append({"start": start, "end": max(end, round(start + 0.5, 2)), "text": text})
+                if segments:
+                    return segments
+            except Exception as e:
+                last_err = e
+                continue
+        if last_err:
+            raise last_err
+        return []
     finally:
         try:
             audio_file.delete()
@@ -144,9 +163,10 @@ def get_transcript(
     video_id: str,
     audio_path: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
+    is_local_file: bool = False,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
-    Retrieve timestamped transcript for a video.
+    Retrieve timestamped transcript for a video (YouTube or local file).
     Returns:
         {
             "segments": [
@@ -154,18 +174,19 @@ def get_transcript(
             ]
         }
     """
-    # 1. Try YouTube captions first (fast and free)
-    try:
-        segments = fetch_youtube_transcript(video_id)
-        if segments:
-            return {"segments": segments}
-    except Exception as e:
-        print(f"[Transcriber] YouTube caption fetch failed: {e}")
+    # 1. For YouTube videos, try captions first (fast and free)
+    if not is_local_file and video_id and not video_id.startswith("upload_"):
+        try:
+            segments = fetch_youtube_transcript(video_id)
+            if segments:
+                return {"segments": segments}
+        except Exception as e:
+            print(f"[Transcriber] YouTube caption fetch failed: {e}")
 
-    # 2. Fallback to Gemini audio transcription if audio exists and key provided
+    # 2. Transcribe audio using Gemini multimodal STT
     key = gemini_api_key or os.getenv("GEMINI_API_KEY")
     if audio_path and os.path.exists(audio_path) and key:
-        print(f"[Transcriber] Falling back to Gemini audio speech-to-text for {audio_path}...")
+        print(f"[Transcriber] Using Gemini audio speech-to-text for {audio_path}...")
         try:
             segments = transcribe_audio_gemini(audio_path, key)
             if segments:
@@ -174,6 +195,5 @@ def get_transcript(
             print(f"[Transcriber] Gemini audio transcription error: {e}")
 
     raise TranscriptionError(
-        f"Unable to transcribe video {video_id}. YouTube captions were not available "
-        "and audio transcription fallback could not complete."
+        f"Unable to transcribe video {video_id}. Captions and audio transcription fallback could not complete."
     )

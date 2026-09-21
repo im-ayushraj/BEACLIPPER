@@ -5,17 +5,18 @@ import os
 from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
 
-from clipper.downloader import download_video
+from clipper.downloader import download_video, extract_audio
 from clipper.transcriber import get_transcript
 from clipper.ai_analyzer import find_important_moments
 from clipper.verifier import verify_all_candidates
 from clipper.ranker import rank_and_deduplicate
 from clipper.cutter import generate_clips
 from clipper.cleanup import cleanup_temp_video_files
+from splitter.splitter import probe_video_metadata
 
 
 class ClipperPipeline:
-    """Coordinates video download, whole-video transcription, AI moment finding, verification, and cutting."""
+    """Coordinates video download/upload, whole-video transcription, AI moment finding, verification, and cutting."""
 
     def __init__(
         self,
@@ -34,16 +35,20 @@ class ClipperPipeline:
 
     def run(
         self,
-        youtube_url: str,
+        youtube_url: Optional[str] = None,
+        source_video_path: Optional[str | Path] = None,
         target_clip_count: int = 10,
         status_callback: Optional[Callable[[str, str], None]] = None,
         precomputed_transcript: Optional[List[Dict[str, Any]]] = None,
     ) -> Dict[str, Any]:
         """
-        Execute the full pipeline for a YouTube URL.
+        Execute the full pipeline for a YouTube URL or directly uploaded video file.
         status_callback(stage, message) can be used to track progress.
         """
         import time
+
+        if not youtube_url and not source_video_path:
+            raise ValueError("Either youtube_url or source_video_path must be provided to ClipperPipeline.run")
 
         start_time = time.time()
         metrics: Dict[str, Any] = {
@@ -57,10 +62,30 @@ class ClipperPipeline:
             if status_callback:
                 status_callback(stage, msg)
 
-        # 1. Download video & extract audio
-        notify("video", "Downloading video and extracting audio...")
-        video_info = download_video(youtube_url, self.working_dir)
-        notify("video_done", f"Video '{video_info['title']}' ready ({int(video_info.get('duration', 0)/60)} mins).")
+        # 1. Acquire video & extract audio track
+        if source_video_path:
+            vpath = Path(source_video_path).resolve()
+            notify("video", "Processing uploaded video and extracting audio track...")
+            meta = probe_video_metadata(vpath)
+            vid_id = f"upload_{vpath.stem[:12]}"
+            title = vpath.stem.replace("_", " ").title()
+            audio_path = self.working_dir / f"{vid_id}.mp3"
+            if not audio_path.exists():
+                extract_audio(str(vpath), str(audio_path))
+            video_info = {
+                "id": vid_id,
+                "title": title,
+                "duration": float(meta.get("duration", 0.0)),
+                "video_path": str(vpath),
+                "audio_path": str(audio_path),
+                "is_local_file": True
+            }
+            notify("video_done", f"Uploaded video '{title}' ready ({int(video_info['duration']/60)} mins).")
+        else:
+            notify("video", "Downloading video and extracting audio...")
+            video_info = download_video(youtube_url, self.working_dir)
+            video_info["is_local_file"] = False
+            notify("video_done", f"Video '{video_info['title']}' ready ({int(video_info.get('duration', 0)/60)} mins).")
 
         # 2. Get timestamped transcript (or reuse precomputed)
         if precomputed_transcript:
@@ -73,6 +98,7 @@ class ClipperPipeline:
                 video_id=video_info["id"],
                 audio_path=video_info["audio_path"],
                 gemini_api_key=self.gemini_api_key,
+                is_local_file=video_info.get("is_local_file", False),
             )
             segments = transcript_data["segments"]
             metrics["transcription_seconds"] = round(time.time() - t_start, 2)

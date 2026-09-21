@@ -194,31 +194,53 @@ def split_video_sequentially(
         start_time = seg["start"]
         duration = seg["duration"]
 
-        cmd = [
+        # Fast Stream Copy attempt: copies packet streams without decoding/re-encoding (25x-50x faster)
+        copy_cmd = [
             ffmpeg_bin,
             "-y",
             "-ss", str(start_time),
             "-i", str(vpath),
             "-t", str(duration),
-            "-c:v", "libx264",
-            "-preset", "veryfast",
-            "-crf", "22",
-            "-c:a", "aac",
-            "-b:a", "128k",
+            "-c", "copy",
             "-avoid_negative_ts", "make_zero",
             "-movflags", "+faststart",
             str(clip_file)
         ]
 
         proc = subprocess.run(
-            cmd,
+            copy_cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
             errors="replace"
         )
-        if proc.returncode != 0 or not clip_file.exists():
-            raise VideoSplitError(f"FFmpeg failed while creating clip {seg['filename']}: {proc.stderr[:300]}")
+
+        # Verify output exists and is not corrupt/empty; fallback to ultrafast re-encode if needed
+        if proc.returncode != 0 or not clip_file.exists() or clip_file.stat().st_size < 500:
+            encode_cmd = [
+                ffmpeg_bin,
+                "-y",
+                "-ss", str(start_time),
+                "-i", str(vpath),
+                "-t", str(duration),
+                "-c:v", "libx264",
+                "-preset", "ultrafast",
+                "-crf", "23",
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-avoid_negative_ts", "make_zero",
+                "-movflags", "+faststart",
+                str(clip_file)
+            ]
+            proc = subprocess.run(
+                encode_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace"
+            )
+            if proc.returncode != 0 or not clip_file.exists():
+                raise VideoSplitError(f"FFmpeg failed while creating clip {seg['filename']}: {proc.stderr[:300]}")
 
         file_size = clip_file.stat().st_size
         seg_record = dict(seg)

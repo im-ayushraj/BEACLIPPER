@@ -125,7 +125,8 @@ class TestWebAPIHardening(unittest.TestCase):
         self.assertIn("35-minute limit", res.json()["detail"])
 
     @patch("web.get_video_metadata_preflight")
-    def test_process_rejects_duplicate_active_job(self, mock_preflight):
+    @patch("web.queue_manager._spawn_worker")
+    def test_process_rejects_duplicate_active_job(self, mock_spawn, mock_preflight):
         """Test /api/process rejects second concurrent submission from same user."""
         mock_preflight.return_value = {"id": "UF8uR6Z6KLc", "title": "Jobs Talk", "duration": 180.0}
         
@@ -142,6 +143,30 @@ class TestWebAPIHardening(unittest.TestCase):
             res2 = self.client.post("/api/process", json={"url": "https://www.youtube.com/watch?v=UF8uR6Z6KLc"}, headers=headers)
             self.assertEqual(res2.status_code, 429)
             self.assertIn("already have an active clipping job", res2.json()["detail"])
+
+    @patch("web.probe_video_metadata")
+    @patch("web.queue_manager._spawn_worker")
+    def test_process_upload_endpoint_success(self, mock_spawn, mock_probe):
+        """Test /api/process-upload accepts file upload and creates job."""
+        mock_probe.return_value = {"duration": 120.0, "width": 1280, "height": 720}
+        import io, uuid
+        test_uid = f"user_upload_{uuid.uuid4().hex[:8]}"
+        dummy_video = io.BytesIO(b"fake video content for testing upload")
+        dummy_video.name = "my_sample.mp4"
+
+        with patch("web.verify_clerk_token", return_value={"sub": test_uid}):
+            headers = {"Authorization": "Bearer mock_token_upload"}
+            res = self.client.post(
+                "/api/process-upload",
+                files={"video": ("my_sample.mp4", dummy_video, "video/mp4")},
+                data={"count": 5},
+                headers=headers
+            )
+            self.assertEqual(res.status_code, 200)
+            data = res.json()
+            self.assertIn("job_id", data)
+            self.assertEqual(data["status"], "processing")
+            self.assertEqual(data["video"]["duration"], 120.0)
 
 
 if __name__ == "__main__":

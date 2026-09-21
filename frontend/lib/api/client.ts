@@ -52,6 +52,60 @@ export async function processVideo(
   }
 }
 
+export async function uploadAndProcessVideo(
+  file: File,
+  count: number = 10,
+  token?: string | null,
+  onProgress?: (percent: number) => void
+): Promise<{ job_id: string; status: string }> {
+  return new Promise((resolve, reject) => {
+    const formData = new FormData();
+    formData.append("video", file);
+    formData.append("count", count.toString());
+
+    const xhr = new XMLHttpRequest();
+    const targetUrl = `${BASE_URL}/api/process-upload`;
+
+    xhr.open("POST", targetUrl, true);
+
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percent = Math.round((event.loaded / event.total) * 100);
+          onProgress(percent);
+        }
+      };
+    }
+
+    xhr.onload = () => {
+      let data: any = {};
+      try {
+        data = JSON.parse(xhr.responseText);
+      } catch {
+        data = {};
+      }
+
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(data);
+      } else {
+        const code = data?.error?.code || (xhr.status === 402 ? "INSUFFICIENT_CREDITS" : undefined);
+        const msg = data?.error?.message || data?.detail || `Upload failed with status ${xhr.status}`;
+        reject(new ApiError(msg, xhr.status, code, data?.error || data));
+      }
+    };
+
+    xhr.onerror = () => {
+      reject(new ApiError("Network error: Could not reach video upload server."));
+    };
+
+    xhr.send(formData);
+  });
+}
+
 export async function getJobStatus(jobId: string, token?: string | null): Promise<ProcessingJob> {
   try {
     const headers: Record<string, string> = {};

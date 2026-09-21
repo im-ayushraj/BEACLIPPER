@@ -49,13 +49,16 @@ class JobQueueManager:
         user_id: str,
         url: str,
         count: int,
-        initial_job_data: Dict[str, Any]
+        initial_job_data: Dict[str, Any],
+        source_file_path: Optional[str] = None
     ) -> Tuple[Dict[str, Any], bool]:
         """
         Enqueue a job.
         Returns (job_data, started_immediately).
         """
         with self.lock:
+            if source_file_path:
+                initial_job_data["source_file_path"] = str(source_file_path)
             self.jobs[job_id] = initial_job_data
 
             # Check if there is capacity to run immediately
@@ -74,16 +77,21 @@ class JobQueueManager:
                 started_immediately = False
 
         if started_immediately and self._worker_fn:
-            self._spawn_worker(job_id, url, count, user_id)
+            self._spawn_worker(job_id, url, count, user_id, source_file_path=source_file_path)
 
         return self.jobs[job_id], started_immediately
 
-    def _spawn_worker(self, job_id: str, url: str, count: int, user_id: str):
+    def _spawn_worker(self, job_id: str, url: str, count: int, user_id: str, source_file_path: Optional[str] = None):
         """Spawns pipeline execution in a dedicated background worker thread."""
         def _target():
             try:
                 if self._worker_fn:
-                    self._worker_fn(job_id, url, count, user_id)
+                    import inspect
+                    sig = inspect.signature(self._worker_fn)
+                    if "source_file_path" in sig.parameters:
+                        self._worker_fn(job_id, url, count, user_id, source_file_path=source_file_path)
+                    else:
+                        self._worker_fn(job_id, url, count, user_id)
             finally:
                 self.on_job_finished(job_id)
 
@@ -95,7 +103,7 @@ class JobQueueManager:
         Called when a running job terminates (completed or error).
         Releases slot and promotes next queued job.
         """
-        promoted_job_to_run: Optional[Tuple[str, str, int, str]] = None
+        promoted_job_to_run: Optional[Tuple[str, str, int, str, Optional[str]]] = None
 
         with self.lock:
             if job_id in self.running_job_ids:
@@ -122,7 +130,8 @@ class JobQueueManager:
                         next_id,
                         next_job.get("url", ""),
                         next_job.get("count", 10),
-                        next_job.get("user_id", "guest_user")
+                        next_job.get("user_id", "guest_user"),
+                        next_job.get("source_file_path")
                     )
 
             # Re-update positions after pop
@@ -135,8 +144,8 @@ class JobQueueManager:
 
         # Launch promoted job outside of lock
         if promoted_job_to_run and self._worker_fn:
-            jid, url, count, uid = promoted_job_to_run
-            self._spawn_worker(jid, url, count, uid)
+            jid, url, count, uid, s_path = promoted_job_to_run
+            self._spawn_worker(jid, url, count, uid, source_file_path=s_path)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
         """Get job data by ID."""

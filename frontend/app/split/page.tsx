@@ -48,16 +48,19 @@ export default function SplitVideoPage() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const pollTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isPollingRef = useRef<boolean>(false);
 
-  // Clean up object URLs on unmount or file change
+  // Clean up object URLs and polling on unmount or file change
   useEffect(() => {
     return () => {
+      isPollingRef.current = false;
       if (videoPreviewUrl) {
         URL.revokeObjectURL(videoPreviewUrl);
       }
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
       }
     };
   }, [videoPreviewUrl]);
@@ -154,34 +157,57 @@ export default function SplitVideoPage() {
 
       const jobId = initRes.job_id;
 
-      // Start polling status
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      // Start non-overlapping polling with 2.5s interval
+      if (pollTimeoutRef.current) {
+        clearTimeout(pollTimeoutRef.current);
+        pollTimeoutRef.current = null;
+      }
+      isPollingRef.current = true;
 
-      pollIntervalRef.current = setInterval(async () => {
+      const pollStatus = async () => {
+        if (!isPollingRef.current) return;
+
         try {
           const status = await getSplitJobStatus(jobId);
+          if (!isPollingRef.current) return;
+
           setCurrentJob(status);
 
           if (status.status === "completed") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            isPollingRef.current = false;
             setIsProcessing(false);
+            return;
           } else if (status.status === "error") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            isPollingRef.current = false;
             setIsProcessing(false);
             setErrorMessage(status.error || "Video splitting encountered an error.");
+            return;
           }
         } catch (err: any) {
           console.error("Polling error:", err);
         }
-      }, 1000);
+
+        // Only schedule next poll if still active
+        if (isPollingRef.current) {
+          pollTimeoutRef.current = setTimeout(pollStatus, 2500);
+        }
+      };
+
+      // Initial status poll after 1.5s
+      pollTimeoutRef.current = setTimeout(pollStatus, 1500);
     } catch (err: any) {
+      isPollingRef.current = false;
       setIsProcessing(false);
       setErrorMessage(err.message || "Failed to upload and start video splitting.");
     }
   };
 
   const handleReset = () => {
-    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+    isPollingRef.current = false;
+    if (pollTimeoutRef.current) {
+      clearTimeout(pollTimeoutRef.current);
+      pollTimeoutRef.current = null;
+    }
     if (videoPreviewUrl) URL.revokeObjectURL(videoPreviewUrl);
     setFile(null);
     setVideoPreviewUrl(null);

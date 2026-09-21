@@ -9,7 +9,7 @@ import { ClipGrid } from "@/components/ClipGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MyClips } from "@/components/MyClips";
-import { processVideo, getJobStatus, getSavedClips } from "@/lib/api/client";
+import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips } from "@/lib/api/client";
 import {
   getUserCredits,
   getCreditTransactions,
@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [currentTab, setCurrentTab] = useState<"studio" | "my-clips" | "usage" | "settings">("studio");
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
   const [currentJob, setCurrentJob] = useState<ProcessingJob | null>(null);
   const [generatedClips, setGeneratedClips] = useState<Clip[]>([]);
   const [savedClips, setSavedClips] = useState<Clip[]>([]);
@@ -150,11 +151,66 @@ export default function DashboardPage() {
     }
   };
 
+  const handleStartUploadClipping = async (file: File, count: number) => {
+    setErrorMessage(null);
+    setInsufficientCreditsError(null);
+    setIsProcessing(true);
+    setUploadProgress(0);
+
+    try {
+      const token = await getToken();
+      const res = await uploadAndProcessVideo(file, count, token, (pct) => {
+        setUploadProgress(pct);
+      });
+      const jobId = res.job_id;
+
+      // Optimistically update or re-fetch credits
+      refreshCreditsAndUsage();
+
+      // Start polling status
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+      pollIntervalRef.current = setInterval(async () => {
+        try {
+          const jobData = await getJobStatus(jobId, token);
+          setCurrentJob(jobData);
+
+          if (jobData.status === "completed") {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            setIsProcessing(false);
+            setGeneratedClips(jobData.clips || []);
+            setSavedClips(jobData.clips || []);
+            refreshCreditsAndUsage();
+          } else if (jobData.status === "error") {
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            setIsProcessing(false);
+            setErrorMessage(jobData.error || "We couldn't finish processing this uploaded video.");
+            refreshCreditsAndUsage();
+          }
+        } catch (pollErr: any) {
+          console.error("Polling error", pollErr);
+        }
+      }, 1500);
+    } catch (err: any) {
+      setIsProcessing(false);
+      if (err.code === "INSUFFICIENT_CREDITS" || err.status === 402) {
+        setInsufficientCreditsError({
+          required: err.data?.required ?? 0,
+          available: err.data?.available ?? credits,
+          message: err.message,
+        });
+      } else {
+        setErrorMessage(err.message || "Unable to upload and process video.");
+      }
+    }
+  };
+
   const handleReset = () => {
     setCurrentJob(null);
     setErrorMessage(null);
     setInsufficientCreditsError(null);
     setIsProcessing(false);
+    setUploadProgress(0);
   };
 
   return (
@@ -180,10 +236,12 @@ export default function DashboardPage() {
           {/* TAB 1: CLIP STUDIO */}
           {currentTab === "studio" && (
             <div className="flex flex-col gap-8">
-              {/* URL Input Form */}
+              {/* URL & Upload Input Form */}
               <UrlInput
                 onSubmit={handleStartClipping}
+                onUploadSubmit={handleStartUploadClipping}
                 isLoading={isProcessing}
+                uploadProgress={uploadProgress}
                 disabled={isProcessing}
               />
 

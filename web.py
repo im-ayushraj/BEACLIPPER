@@ -127,8 +127,8 @@ def init_job_steps() -> Dict[str, Dict[str, Any]]:
     }
 
 
-def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_user"):
-    """Background worker for executing clipping pipeline."""
+def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_user", source_file_path: Optional[str] = None):
+    """Background worker for executing clipping pipeline (YouTube or uploaded file)."""
     job = jobs[job_id]
 
     def status_callback(stage: str, msg: str):
@@ -182,7 +182,8 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             output_dir=OUTPUT_DIR
         )
         result = pipeline.run(
-            youtube_url=url,
+            youtube_url=url if not source_file_path else None,
+            source_video_path=source_file_path,
             target_clip_count=count,
             status_callback=status_callback
         )
@@ -325,6 +326,14 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                 status="failed",
                 error=str(e)
             )
+    finally:
+        if source_file_path:
+            try:
+                p = Path(source_file_path)
+                if p.exists():
+                    p.unlink(missing_ok=True)
+            except Exception:
+                pass
 
 # Register worker with Queue Manager
 queue_manager.set_worker(run_pipeline_task)
@@ -777,6 +786,174 @@ def process_video(
         url=safe_url,
         count=req.count,
         initial_job_data=initial_job_data
+    )
+
+    return {
+        "job_id": job_id,
+        "user_id": user_id,
+        "status": job["status"],
+        "queue_position": job.get("queue_position", 0),
+        "video": video_meta,
+        "credits_deducted": required_credits,
+        "credits_remaining": debit_info.get("balance", available_credits - required_credits)
+    }
+
+
+@app.post("/api/process-upload")
+async def process_video_upload(
+    video: UploadFile = File(...),
+    count: int = Form(10),
+    authorization: Optional[str] = Header(None),
+    x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
+):
+    """
+    AI Video Clipper endpoint for direct video file uploads.
+    Streams upload to disk, validates duration and safeguards, debits credits,
+    and runs the full AI clipping pipeline.
+    """
+    user_id = extract_user_id(authorization)
+
+    # 1. Rate limiting protection
+    allowed, _, retry_after = ai_clipping_limiter.is_allowed(user_id, max_requests=5, window_seconds=60)
+    if not allowed:
+        raise HTTPException(
+            status_code=429,
+            detail=f"Rate limit exceeded for AI clipping. Please try again in {retry_after}s."
+        )
+
+    # 2. Concurrency Protection: Enforce single active job per user
+    active_job = queue_manager.check_user_active_job(user_id)
+    if active_job:
+        raise HTTPException(
+            status_code=429,
+            detail="You already have an active clipping job in progress. Please wait for it to finish or check your live progress."
+        )
+
+    # 3. Stream upload file to disk
+    job_id = str(uuid.uuid4())
+    safe_filename = re.sub(r"[^\w\.-]", "_", video.filename or "uploaded_video.mp4")
+    upload_file_path = TEMP_DIR / f"{job_id}_{safe_filename}"
+    try:
+        with open(upload_file_path, "wb") as f:
+            while chunk := await video.read(1024 * 1024):  # 1MB chunks
+                f.write(chunk)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to upload video: {str(e)}")
+
+    # 4. Probe video metadata & enforce 35-minute duration cap
+    try:
+        meta = probe_video_metadata(upload_file_path)
+    except Exception as e:
+        upload_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=f"Invalid video file: {str(e)}")
+
+    dur = float(meta.get("duration", 0.0))
+    if dur <= 0:
+        upload_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Invalid video duration (0 seconds).")
+
+    if dur > MAX_VIDEO_DURATION_SECONDS:
+        upload_file_path.unlink(missing_ok=True)
+        mins = round(dur / 60, 1)
+        max_mins = int(MAX_VIDEO_DURATION_SECONDS / 60)
+        raise HTTPException(
+            status_code=400,
+            detail=f"Video duration ({mins} mins) exceeds the {max_mins}-minute limit. Please submit videos up to {max_mins} minutes."
+        )
+
+    video_meta = {
+        "id": f"upload_{job_id[:8]}",
+        "title": video.filename or "Uploaded Video",
+        "duration": dur,
+        "width": meta.get("width", 0),
+        "height": meta.get("height", 0)
+    }
+
+    # 5. Credit Solvency Check & Atomic Deduction
+    cost_data = CreditService.estimate_cost("AI_CLIPPER", dur)
+    required_credits = cost_data["estimated_credits"]
+    available_credits = CreditService.get_balance(user_id)
+
+    if available_credits < required_credits:
+        upload_file_path.unlink(missing_ok=True)
+        return JSONResponse(
+            status_code=402,
+            content={
+                "error": {
+                    "code": "INSUFFICIENT_CREDITS",
+                    "message": f"Not enough credits for this video. Required: {required_credits}, Available: {available_credits}.",
+                    "required": required_credits,
+                    "available": available_credits
+                }
+            }
+        )
+
+    # Atomically debit credits before scheduling
+    debit_info = CreditService.reserve_and_consume(
+        user_id=user_id,
+        amount=required_credits,
+        reference_id=job_id,
+        source="AI_CLIPPER",
+        metadata={"video_title": video_meta["title"], "duration": dur, "type": "uploaded_video"}
+    )
+
+    initial_job_data = {
+        "job_id": job_id,
+        "user_id": user_id,
+        "url": f"uploaded://{safe_filename}",
+        "count": count,
+        "status": "processing",
+        "stage": "video",
+        "current_message": "Initializing clipping pipeline on uploaded video...",
+        "progress_percent": 5,
+        "steps": init_job_steps(),
+        "clips": [],
+        "video": video_meta,
+        "queue_position": 0,
+        "credits_deducted": required_credits,
+        "created_at": time.time(),
+        "error": None
+    }
+
+    # Record job in local database
+    try:
+        db_s = get_db_session()
+        db_job = ProcessingJobModel(
+            job_id=job_id,
+            user_id=user_id,
+            job_type="ai_clipper",
+            url=f"uploaded://{safe_filename}",
+            status="processing",
+            stage="video",
+            progress_percent=5,
+            duration_seconds=dur,
+            credits_deducted=required_credits,
+            idempotency_key=x_idempotency_key
+        )
+        db_s.add(db_job)
+        db_s.commit()
+        db_s.close()
+    except Exception as db_e:
+        print(f"[DB] Warning creating job record: {db_e}")
+
+    # Real-time sync to Supabase Cloud Database if enabled
+    if is_supabase_enabled():
+        save_job_to_cloud(
+            job_id=job_id,
+            user_id=user_id,
+            url=f"uploaded://{safe_filename}",
+            status="processing",
+            progress_percent=5,
+            stage="video"
+        )
+
+    job, started_immediately = queue_manager.add_job(
+        job_id=job_id,
+        user_id=user_id,
+        url=f"uploaded://{safe_filename}",
+        count=count,
+        initial_job_data=initial_job_data,
+        source_file_path=str(upload_file_path)
     )
 
     return {
