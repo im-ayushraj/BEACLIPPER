@@ -28,7 +28,8 @@ export async function processVideo(
   url: string,
   count: number = 10,
   token?: string | null,
-  aspectRatio: string = "original"
+  aspectRatio: string = "original",
+  subtitles: boolean = true
 ): Promise<{ job_id: string; status: string }> {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) {
@@ -47,7 +48,7 @@ export async function processVideo(
     const res = await fetch(`${BASE_URL}/api/process`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ url: trimmedUrl, count, aspect_ratio: aspectRatio }),
+      body: JSON.stringify({ url: trimmedUrl, count, aspect_ratio: aspectRatio, subtitles }),
     });
 
     if (!res.ok) {
@@ -69,13 +70,15 @@ export async function uploadAndProcessVideo(
   count: number = 10,
   token?: string | null,
   onProgress?: (percent: number) => void,
-  aspectRatio: string = "original"
+  aspectRatio: string = "original",
+  subtitles: boolean = true
 ): Promise<{ job_id: string; status: string }> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("video", file);
     formData.append("count", count.toString());
     formData.append("aspect_ratio", aspectRatio);
+    formData.append("subtitles", subtitles ? "true" : "false");
 
     const xhr = new XMLHttpRequest();
     const targetUrl = `${BASE_URL}/api/process-upload`;

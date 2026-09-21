@@ -24,22 +24,39 @@ def cut_single_clip(
     output_path: str,
     ffmpeg_bin: str = "ffmpeg",
     aspect_ratio: str = "original",
-    normalize_audio: bool = True
+    normalize_audio: bool = True,
+    subtitle_ass_path: Optional[str] = None
 ) -> None:
     """
-    Cut a single clip. If aspect_ratio == "vertical_9_16", re-frames into 9:16
-    Shorts/Reels format with a stylish blurred background and normalized audio.
-    Otherwise uses lightning-fast zero-reencoding stream copy.
+    Cut a single clip.
+    - If aspect_ratio == 'vertical_9_16', re-frames into 9:16 Shorts/Reels with blurred background.
+    - If subtitle_ass_path is provided, burns dynamic stylized captions.
+    - Automatically normalizes audio to -14 LUFS broadcast standard.
+    - Otherwise uses lightning-fast zero-reencoding stream copy.
     """
     out_file = Path(output_path)
+    escaped_sub = (
+        str(Path(subtitle_ass_path).resolve()).replace("\\", "/").replace(":", "\\:")
+        if subtitle_ass_path and Path(subtitle_ass_path).exists()
+        else None
+    )
 
     # Mode 1: 9:16 Vertical Video with Blurred Background (Reels / TikTok / Shorts)
     if aspect_ratio in ("vertical_9_16", "9:16", "vertical"):
-        filter_complex = (
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];"
-            "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
-            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
-        )
+        if escaped_sub:
+            filter_complex = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];"
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2[base];"
+                f"[base]subtitles='{escaped_sub}'"
+            )
+        else:
+            filter_complex = (
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];"
+                "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
+                "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+            )
+
         encode_cmd = [
             ffmpeg_bin,
             "-y",
@@ -71,7 +88,40 @@ def cut_single_clip(
         except subprocess.TimeoutExpired:
             raise VideoCuttingError(f"FFmpeg timed out rendering 9:16 vertical clip at {output_path}")
 
-    # Mode 2: Original Aspect Ratio (16:9 / Landscape) Fast Stream Copy (~0.1s - 0.3s)
+    # Mode 2: Original 16:9 with Burned-in Subtitles
+    if escaped_sub:
+        encode_sub_cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-ss", f"{max(0.0, float(start)):.3f}",
+            "-i", video_path,
+            "-t", f"{max(0.5, float(duration)):.3f}",
+            "-vf", f"subtitles='{escaped_sub}'",
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "22",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-af", "loudnorm=I=-14:LRA=11:TP=-1.5" if normalize_audio else "anull",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            output_path
+        ]
+        try:
+            res = subprocess.run(
+                encode_sub_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+                timeout=180
+            )
+            if res.returncode == 0 and out_file.exists() and out_file.stat().st_size >= 500:
+                return
+        except subprocess.TimeoutExpired:
+            raise VideoCuttingError(f"FFmpeg timed out burning subtitles at {output_path}")
+
+    # Mode 3: Original Aspect Ratio Fast Stream Copy (~0.1s - 0.3s)
     copy_cmd = [
         ffmpeg_bin,
         "-y",
@@ -146,7 +196,9 @@ def generate_clips(
     ffmpeg_bin: str | None = None,
     max_workers: Optional[int] = None,
     progress_callback: Optional[Callable[[int, int], None]] = None,
-    aspect_ratio: str = "original"
+    aspect_ratio: str = "original",
+    burn_subtitles: bool = True,
+    transcript_segments: Optional[List[Dict[str, Any]]] = None
 ) -> Dict[str, Any]:
     """
     Cut all top clips concurrently using multi-threaded worker pool
@@ -165,6 +217,9 @@ def generate_clips(
 
     workers = max_workers or min(4, os.cpu_count() or 2)
     prepared_items = []
+    is_vert = aspect_ratio in ("vertical_9_16", "9:16", "vertical")
+
+    from clipper.subtitles import generate_ass_subtitles
 
     for index, clip in enumerate(clips_data, start=1):
         filename = f"clip_{index:02d}.mp4"
@@ -178,10 +233,23 @@ def generate_clips(
         tags = clip.get("tags", ["#shorts", "#viral", "#highlights"])
         explanation = str(clip.get("explanation", reason))
 
+        # Generate ASS subtitle file if enabled and transcript is available
+        sub_path = None
+        if burn_subtitles and transcript_segments:
+            ass_path = out_dir / f"clip_{index:02d}.ass"
+            sub_path = generate_ass_subtitles(
+                segments=transcript_segments,
+                clip_start=start,
+                clip_end=end,
+                output_ass_path=ass_path,
+                is_vertical=is_vert
+            )
+
         prepared_items.append({
             "index": index,
             "filename": filename,
             "clip_filepath": str(clip_filepath),
+            "subtitle_path": sub_path,
             "start": start,
             "end": end,
             "duration": duration,
@@ -201,7 +269,8 @@ def generate_clips(
             duration=item["duration"],
             output_path=item["clip_filepath"],
             ffmpeg_bin=bin_path,
-            aspect_ratio=aspect_ratio
+            aspect_ratio=aspect_ratio,
+            subtitle_ass_path=item.get("subtitle_path")
         )
         return item
 

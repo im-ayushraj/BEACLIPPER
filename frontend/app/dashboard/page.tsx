@@ -138,14 +138,19 @@ export default function DashboardPage() {
     }
   }, [currentTab]);
 
-  const handleStartClipping = async (url: string, count: number, aspectRatio: string = "original") => {
+  const handleStartClipping = async (
+    url: string,
+    count: number,
+    aspectRatio: string = "original",
+    subtitles: boolean = true
+  ) => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
     setIsProcessing(true);
 
     try {
       const token = await getToken();
-      const res = await processVideo(url, count, token, aspectRatio);
+      const res = await processVideo(url, count, token, aspectRatio, subtitles);
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits
@@ -195,7 +200,12 @@ export default function DashboardPage() {
     }
   };
 
-  const handleStartUploadClipping = async (file: File, count: number, aspectRatio: string = "original") => {
+  const handleStartUploadClipping = async (
+    file: File,
+    count: number,
+    aspectRatio: string = "original",
+    subtitles: boolean = true
+  ) => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
     setIsProcessing(true);
@@ -205,7 +215,7 @@ export default function DashboardPage() {
       const token = await getToken();
       const res = await uploadAndProcessVideo(file, count, token, (pct) => {
         setUploadProgress(pct);
-      }, aspectRatio);
+      }, aspectRatio, subtitles);
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits

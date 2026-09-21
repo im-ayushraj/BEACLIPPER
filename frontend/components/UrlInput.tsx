@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Sparkles, Loader2, Zap, Upload, Film, FileVideo, X, CheckCircle2 } from "lucide-react";
+import { Sparkles, Loader2, Zap, Upload, Film, FileVideo, X, CheckCircle2, Captions } from "lucide-react";
 import { cn, formatTime } from "@/lib/utils";
 
 interface UrlInputProps {
-  onSubmit: (url: string, count: number, aspectRatio?: string) => void;
-  onUploadSubmit?: (file: File, count: number, aspectRatio?: string) => void;
+  onSubmit: (url: string, count: number, aspectRatio?: string, subtitles?: boolean) => void;
+  onUploadSubmit?: (file: File, count: number, aspectRatio?: string, subtitles?: boolean) => void;
   isLoading: boolean;
   uploadProgress?: number;
   disabled?: boolean;
@@ -23,6 +23,7 @@ export function UrlInput({
   const [url, setUrl] = useState("");
   const [clipCount, setClipCount] = useState<number>(10);
   const [aspectRatio, setAspectRatio] = useState<"original" | "vertical_9_16">("original");
+  const [subtitles, setSubtitles] = useState<boolean>(true);
   const [inputError, setInputError] = useState<string | null>(null);
 
   // Upload tab state
@@ -57,7 +58,7 @@ export function UrlInput({
     }
 
     setInputError(null);
-    onSubmit(cleanUrl, clipCount, aspectRatio);
+    onSubmit(cleanUrl, clipCount, aspectRatio, subtitles);
   };
 
   const handleFileSelect = (file: File) => {
@@ -120,7 +121,7 @@ export function UrlInput({
 
     setInputError(null);
     if (onUploadSubmit) {
-      onUploadSubmit(selectedFile, clipCount, aspectRatio);
+      onUploadSubmit(selectedFile, clipCount, aspectRatio, subtitles);
     }
   };
 
@@ -181,11 +182,11 @@ export function UrlInput({
         </div>
       </div>
 
-      {/* Target Clip Count & Format / Aspect Ratio Selectors */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3.5 border-b border-white/[0.06]">
+      {/* Target Clip Count, Format / Aspect Ratio, and Animated Captions Selectors */}
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4 pb-3.5 border-b border-white/[0.06]">
         {/* Target clips */}
-        <div className="flex items-center justify-between sm:justify-start gap-3">
-          <span className="text-xs text-zinc-400">Target clips:</span>
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-zinc-400">Clips:</span>
           <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#0c0e12] p-0.5 text-xs">
             <button
               type="button"
@@ -196,7 +197,7 @@ export function UrlInput({
                 clipCount === 5 ? "bg-white/10 text-white font-semibold" : "text-zinc-400 hover:text-white"
               )}
             >
-              5 clips
+              5
             </button>
             <button
               type="button"
@@ -207,13 +208,13 @@ export function UrlInput({
                 clipCount === 10 ? "bg-white/10 text-white font-semibold" : "text-zinc-400 hover:text-white"
               )}
             >
-              10 clips
+              10
             </button>
           </div>
         </div>
 
         {/* Aspect Ratio / Format */}
-        <div className="flex items-center justify-between sm:justify-end gap-3">
+        <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-400">Format:</span>
           <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#0c0e12] p-0.5 text-xs">
             <button
@@ -242,6 +243,33 @@ export function UrlInput({
               <span>Shorts / Reels (9:16)</span>
             </button>
           </div>
+        </div>
+
+        {/* Hormozi Subtitles Toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSubtitles(!subtitles)}
+            disabled={disabled || isLoading}
+            className={cn(
+              "rounded-md px-2.5 py-1 text-xs font-medium transition flex items-center gap-1.5 border",
+              subtitles
+                ? "bg-amber-500/15 border-amber-500/40 text-amber-300 font-semibold shadow-xs"
+                : "border-white/[0.08] bg-[#0c0e12] text-zinc-400 hover:text-white"
+            )}
+            title="Burns high-energy Alex Hormozi style animated highlight captions into the video clips"
+          >
+            <Captions className={cn("h-3.5 w-3.5", subtitles ? "text-amber-400" : "text-zinc-400")} />
+            <span>Hormozi Captions</span>
+            <span
+              className={cn(
+                "text-[10px] px-1 py-0.2 rounded font-mono font-bold tracking-wider",
+                subtitles ? "bg-amber-400 text-black" : "bg-white/10 text-zinc-400"
+              )}
+            >
+              {subtitles ? "ON" : "OFF"}
+            </span>
+          </button>
         </div>
       </div>
 

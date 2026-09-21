@@ -144,11 +144,24 @@ def execute_job(job_info: dict):
     )
 
     try:
+        aspect_ratio = job_info.get("aspect_ratio", "original")
+        burn_subtitles = job_info.get("subtitles", True)
+
         # Run pipeline
         if source_file_path and os.path.exists(source_file_path):
-            result = pipeline.run(source_video_path=source_file_path, target_clip_count=count)
+            result = pipeline.run(
+                source_video_path=source_file_path,
+                target_clip_count=count,
+                aspect_ratio=aspect_ratio,
+                burn_subtitles=burn_subtitles
+            )
         else:
-            result = pipeline.run(youtube_url=url, target_clip_count=count)
+            result = pipeline.run(
+                youtube_url=url,
+                target_clip_count=count,
+                aspect_ratio=aspect_ratio,
+                burn_subtitles=burn_subtitles
+            )
 
         clips = result.get("clips", [])
         video_metadata = result.get("video", {})

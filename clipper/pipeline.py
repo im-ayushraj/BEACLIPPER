@@ -48,6 +48,7 @@ class ClipperPipeline:
         url: Optional[str] = None,
         count: Optional[int] = None,
         aspect_ratio: str = "original",
+        burn_subtitles: bool = True,
     ) -> Dict[str, Any]:
         """
         Execute the full pipeline for a YouTube URL or directly uploaded video file.
@@ -165,13 +166,16 @@ class ClipperPipeline:
         notify("analysis_done", f"Selected {len(top_candidates)} optimal clips with full titles, tags & explanations.")
 
         # 6. FFmpeg creates clips and clips.json using stream-copy & parallel processing
-        notify("clips", f"Generating {len(top_candidates)} video clips using high-speed FFmpeg...")
+        sub_msg = " with animated subtitles" if burn_subtitles else ""
+        notify("clips", f"Generating {len(top_candidates)} video clips{sub_msg} using high-speed FFmpeg...")
         clips_result = generate_clips(
             video_path=video_info["video_path"],
             clips_data=top_candidates,
             output_dir=self.output_dir,
-            progress_callback=lambda done, total: notify("clips", f"Cut {done}/{total} clips via fast stream copy..."),
-            aspect_ratio=aspect_ratio
+            progress_callback=lambda done, total: notify("clips", f"Cut {done}/{total} clips..."),
+            aspect_ratio=aspect_ratio,
+            burn_subtitles=burn_subtitles,
+            transcript_segments=segments
         )
         notify("clips_done", f"Generated {len(clips_result['clips'])} clips in {self.output_dir}.")
 

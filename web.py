@@ -141,6 +141,7 @@ class ProcessRequest(BaseModel):
     url: str
     count: int = 10
     aspect_ratio: Optional[str] = "original"
+    subtitles: Optional[bool] = True
 
 
 def init_job_steps() -> Dict[str, Dict[str, Any]]:
@@ -217,7 +218,8 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             source_video_path=source_file_path,
             target_clip_count=count,
             status_callback=status_callback,
-            aspect_ratio=job.get("aspect_ratio", "original")
+            aspect_ratio=job.get("aspect_ratio", "original"),
+            burn_subtitles=job.get("subtitles", True)
         )
         all_clips = result.get("clips", [])
 
@@ -1345,6 +1347,7 @@ def process_video(
         "url": safe_url,
         "count": req.count,
         "aspect_ratio": req.aspect_ratio or "original",
+        "subtitles": True if req.subtitles is None else bool(req.subtitles),
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline...",
@@ -1416,6 +1419,7 @@ async def process_video_upload(
     video: UploadFile = File(...),
     count: int = Form(10),
     aspect_ratio: str = Form("original"),
+    subtitles: bool = Form(True),
     authorization: Optional[str] = Header(None),
     x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
@@ -1533,6 +1537,7 @@ async def process_video_upload(
         "url": f"uploaded://{safe_filename}",
         "count": count,
         "aspect_ratio": aspect_ratio or "original",
+        "subtitles": bool(subtitles),
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline on uploaded video...",

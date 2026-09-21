@@ -232,6 +232,42 @@ class TestClipperComponents(unittest.TestCase):
         finally:
             shutil.rmtree(test_dir, ignore_errors=True)
 
+    def test_ass_subtitle_generation_and_formatting(self):
+        """Test Alex Hormozi style ASS subtitle generation and formatting."""
+        from clipper.subtitles import format_ass_time, chunk_text_into_punchy_lines, generate_ass_subtitles
+
+        # Test timestamp formatting
+        self.assertEqual(format_ass_time(0.0), "0:00:00.00")
+        self.assertEqual(format_ass_time(65.42), "0:01:05.42")
+        self.assertEqual(format_ass_time(3600.0), "1:00:00.00")
+
+        # Test chunking into punchy 2-3 word lines with highlights
+        chunks = chunk_text_into_punchy_lines("This is an incredible viral video clipping engine.", 0.0, 4.0, words_per_line=3)
+        self.assertGreater(len(chunks), 1)
+        self.assertIn(r"{\c&H0000FFFF&}", chunks[0]["text"])
+
+        # Test ASS file generation
+        segments = [
+            {"start": 10.0, "end": 14.0, "text": "Nobody wants to build slowly anymore."},
+            {"start": 14.5, "end": 19.0, "text": "They want fast results with AI."},
+        ]
+        test_ass = Path(__file__).resolve().parent / "temp_test_subs.ass"
+        try:
+            res = generate_ass_subtitles(segments, 10.0, 20.0, test_ass, is_vertical=True)
+            self.assertIsNotNone(res)
+            self.assertTrue(test_ass.exists())
+
+            with open(test_ass, "r", encoding="utf-8") as f:
+                content = f.read()
+
+            self.assertIn("[Script Info]", content)
+            self.assertIn("Hormozi", content)
+            self.assertIn("NOBODY", content)
+            self.assertIn(r"{\c&H0000FFFF&}", content)
+        finally:
+            if test_ass.exists():
+                test_ass.unlink(missing_ok=True)
+
 
 if __name__ == "__main__":
     unittest.main()
