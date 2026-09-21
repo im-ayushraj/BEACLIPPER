@@ -52,7 +52,8 @@ class TestPhase2SaaS(unittest.TestCase):
                         self.assertIsNotNone(url)
                         self.assertIn("X-Amz-Signature", url)
         finally:
-            os.unlink(temp_clip)
+            if os.path.exists(temp_clip):
+                os.unlink(temp_clip)
 
     def test_03_billing_status_endpoint(self):
         """Verify /api/billing/status returns available plans and packages."""

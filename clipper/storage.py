@@ -182,13 +182,15 @@ def upload_clip_to_storage(
     file_path: Path | str,
     user_id: str,
     clip_name: str,
-    expires_in: int = 86400
+    expires_in: int = 86400,
+    cleanup_local: bool = True
 ) -> Optional[str]:
     """
     Decoupled Cloud Upload Dispatcher:
     1. If AWS S3 or Cloudflare R2 is configured: uploads and returns presigned S3/R2 URL.
     2. Else if Supabase Storage is configured: uploads to Supabase and returns signed URL.
     3. Else fallback to local media URL.
+    Automatically deletes local file after successful cloud upload so nothing remains on local disk.
     """
     p = Path(file_path)
     if not p.exists():
@@ -206,6 +208,11 @@ def upload_clip_to_storage(
                 filename=clip_name
             )
             if signed_url:
+                if cleanup_local and p.exists():
+                    try:
+                        p.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 return signed_url
 
     # 2. Check Supabase Storage
@@ -224,8 +231,13 @@ def upload_clip_to_storage(
                 path=storage_path,
                 expires_in=expires_in
             )
-            signed_url = res.get("signedURL") or res.get("signedUrl") or res.get("data", {}).get("signedUrl")
+            signed_url = res.get("signedURL") or res.get("signedUrl") or (res.get("data") or {}).get("signedUrl")
             if signed_url:
+                if cleanup_local and p.exists():
+                    try:
+                        p.unlink(missing_ok=True)
+                    except Exception:
+                        pass
                 return signed_url
         except Exception as e:
             print(f"[Supabase Storage] Error uploading {clip_name}: {e}")
