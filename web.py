@@ -90,9 +90,12 @@ init_db()
 app = FastAPI(title="AI Video Clipper & Video Splitter (Production)")
 
 # Enable CORS for Next.js frontend
+allowed_origins_env = os.getenv("ALLOWED_ORIGINS")
+cors_origins = [o.strip() for o in allowed_origins_env.split(",") if o.strip()] if allowed_origins_env else ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -846,6 +849,19 @@ class AdminCreditRequest(BaseModel):
     reason: Optional[str] = "Admin manual adjustment"
 
 
+def check_admin_authorization(authorization: Optional[str] = None, x_admin_key: Optional[str] = None):
+    admin_key = os.getenv("ADMIN_SECRET_KEY") or os.getenv("CLERK_SECRET_KEY")
+    admin_user_ids = set(filter(None, [u.strip() for u in os.getenv("ADMIN_USER_IDS", "").split(",")]))
+    caller_id = extract_user_id(authorization)
+
+    key_match = bool(x_admin_key and admin_key and x_admin_key == admin_key)
+    user_match = bool(caller_id in admin_user_ids and caller_id.startswith("user_"))
+    dev_fallback = bool(not admin_key and not admin_user_ids and caller_id.startswith("user_") and os.getenv("ENVIRONMENT", "").lower() not in ("production", "prod"))
+
+    if not (key_match or user_match or dev_fallback):
+        raise HTTPException(status_code=403, detail="Unauthorized admin action.")
+
+
 @app.post("/api/admin/credits")
 def admin_adjust_credits_endpoint(
     req: AdminCreditRequest,
@@ -856,10 +872,7 @@ def admin_adjust_credits_endpoint(
     Admin endpoint to grant, deduct, or set user credits.
     Updates PostgreSQL/SQLite DB and immediately syncs to Clerk publicMetadata.
     """
-    admin_key = os.getenv("ADMIN_SECRET_KEY") or os.getenv("CLERK_SECRET_KEY")
-    caller_id = extract_user_id(authorization)
-    if x_admin_key != admin_key and not caller_id.startswith("user_"):
-        raise HTTPException(status_code=403, detail="Unauthorized admin action.")
+    check_admin_authorization(authorization, x_admin_key)
 
     try:
         res = CreditService.admin_adjust_credits(
@@ -883,10 +896,7 @@ def admin_list_users_endpoint(
     """
     List all registered users from Clerk with their live credit balances, plans, and database status.
     """
-    admin_key = os.getenv("ADMIN_SECRET_KEY") or os.getenv("CLERK_SECRET_KEY")
-    caller_id = extract_user_id(authorization)
-    if x_admin_key != admin_key and not caller_id.startswith("user_"):
-        raise HTTPException(status_code=403, detail="Unauthorized admin action.")
+    check_admin_authorization(authorization, x_admin_key)
 
     from clipper.clerk_service import list_clerk_users, sync_credits_to_clerk_background
     users = list_clerk_users()
@@ -1515,6 +1525,41 @@ def get_status(
 ):
     caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
     job = queue_manager.get_job(job_id)
+    if not job:
+        # Fallback to persistent DB for completed/error jobs across server restarts
+        db_s = get_db_session()
+        try:
+            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                clips_recs = db_s.query(ClipModel).filter_by(job_id=job_id).all()
+                clips_list = []
+                for c in clips_recs:
+                    clips_list.append({
+                        "file": c.file_name,
+                        "title": c.title,
+                        "duration": c.duration,
+                        "score": c.score,
+                        "tags": json.loads(c.tags_json) if c.tags_json else [],
+                        "explanation": c.explanation or "",
+                        "reason": c.reason or "",
+                        "start": c.start_time,
+                        "end": c.end_time,
+                        "url": c.signed_url or f"/output/{c.file_name}",
+                    })
+                job = {
+                    "job_id": db_job.job_id,
+                    "user_id": db_job.user_id,
+                    "status": db_job.status,
+                    "stage": db_job.stage or "completed",
+                    "progress_percent": db_job.progress_percent,
+                    "current_message": db_job.error if db_job.status == "error" else f"Successfully generated {len(clips_list)} clips.",
+                    "clips": clips_list,
+                    "credits_deducted": db_job.credits_deducted,
+                    "error": db_job.error,
+                }
+        finally:
+            db_s.close()
+
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
 

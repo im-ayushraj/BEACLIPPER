@@ -107,8 +107,10 @@ def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
             options={"verify_exp": True}
         )
         return payload
-    except Exception as e:
-        # Fallback for unverified development tokens if JWKS is temporarily unreachable
+    except Exception:
+        # Fallback for unverified development tokens only in local dev/test environment
+        if os.getenv("ENVIRONMENT", "").lower() in ("production", "prod"):
+            return None
         try:
             unverified = jwt.decode(cleaned_token, options={"verify_signature": False})
             return unverified

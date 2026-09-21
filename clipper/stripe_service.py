@@ -180,7 +180,10 @@ class StripeBillingService:
                 print(f"[Stripe Webhook] Signature verification failed: {e}")
                 raise ValueError(f"Webhook signature error: {str(e)}")
         else:
-            # Fallback json parsing for simulated/sandbox webhook tests
+            # In production, untrusted or unsigned webhooks are strictly rejected
+            if os.getenv("ENVIRONMENT", "").lower() in ("production", "prod"):
+                raise ValueError("Unauthorized webhook: Valid Stripe-Signature header and STRIPE_WEBHOOK_SECRET required.")
+            # Fallback json parsing for local simulation / sandbox tests
             try:
                 event = json.loads(payload_bytes.decode("utf-8"))
             except Exception as e:
