@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X, Check, Zap, Sparkles, CreditCard, Loader2, ArrowRight } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
 
@@ -16,6 +17,11 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
   const [tab, setTab] = useState<"plans" | "credits">(defaultTab);
   const [loadingItem, setLoadingItem] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   let getToken: (() => Promise<string | null>) | null = null;
   try {
@@ -25,7 +31,7 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
     getToken = null;
   }
 
-  if (!isOpen) return null;
+  if (!isOpen || !mounted) return null;
 
   const handleCheckout = async (itemType: "plan" | "credit_package", itemId: string) => {
     setLoadingItem(itemId);
@@ -77,13 +83,13 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl max-h-[90vh] overflow-y-auto rounded-2xl border border-white/10 bg-[#0d0f17] p-6 sm:p-8 text-white shadow-2xl shadow-blue-900/20">
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/85 p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto my-auto rounded-2xl border border-white/15 bg-[#0d0f17] p-6 sm:p-8 text-white shadow-2xl shadow-blue-900/40">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/5 transition"
+          className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition z-10"
           aria-label="Close"
         >
           <X className="w-5 h-5" />
@@ -372,6 +378,7 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
           Secure payment powered by Stripe. Cancel subscriptions anytime from your account dashboard.
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

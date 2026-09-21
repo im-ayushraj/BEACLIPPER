@@ -15,7 +15,8 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
   const [pricingOpen, setPricingOpen] = useState(false);
 
   return (
-    <nav className="sticky top-0 z-50 w-full border-b border-white/[0.08] bg-[#090a0f]/80 backdrop-blur-md">
+    <>
+      <nav className="sticky top-0 z-50 w-full border-b border-white/[0.08] bg-[#090a0f]/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 transition hover:opacity-90">
@@ -161,9 +162,10 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
           </div>
         </div>
       )}
-
-      {/* Pricing & Upgrade Modal */}
-      <PricingModal isOpen={pricingOpen} onClose={() => setPricingOpen(false)} />
     </nav>
+
+    {/* Pricing & Upgrade Modal */}
+    <PricingModal isOpen={pricingOpen} onClose={() => setPricingOpen(false)} />
+  </>
   );
 }
