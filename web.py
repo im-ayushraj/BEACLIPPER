@@ -11,7 +11,7 @@ import re
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, UploadFile, File, Form
+from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
@@ -44,7 +44,8 @@ from clipper.storage import (
     save_clips_to_db,
     save_job_to_cloud,
     get_user_clips_from_cloud,
-    is_supabase_enabled
+    is_supabase_enabled,
+    get_storage_provider,
 )
 from clipper.db import (
     init_db,
@@ -68,6 +69,8 @@ from clipper.payment_service import (
     PaymentService,
     SubscriptionService,
 )
+from clipper.stripe_service import StripeBillingService
+from clipper.notifier import notify_job_completed, notify_job_failed
 from clipper.transcriber import get_transcript, TranscriptionError
 from splitter.splitter import (
     probe_video_metadata,
@@ -305,7 +308,29 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                 }, f, indent=2)
         except Exception as e:
             print(f"Warning: Failed to save user clips: {e}")
+
+        # 4. Dispatch completion email notification if user email is known
+        try:
+            notify_job_completed(
+                user_email=job.get("user_email"),
+                job_id=job_id,
+                video_title=result.get("video", {}).get("title", "Video"),
+                clips=result.get("clips", []),
+                user_id=user_id
+            )
+        except Exception as n_err:
+            print(f"[Notifier] Completion notice error: {n_err}")
+
     except Exception as e:
+        # Transient retry handling (up to max_retries attempts before permanent failure)
+        current_retries = job.get("retry_count", 0)
+        max_retries = getattr(queue_manager, "max_retries", 2)
+        if current_retries < max_retries:
+            queue_manager.record_retry(job_id, str(e))
+            print(f"[Worker] Transient error for job {job_id} ({e}). Retrying ({current_retries + 1}/{max_retries})...")
+            time.sleep(1.5)
+            return run_pipeline_task(job_id, url, count, user_id, source_file_path)
+
         job["status"] = "error"
         job["error"] = str(e)
         for k, v in job["steps"].items():
@@ -314,14 +339,28 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                 break
 
         # Safe automatic refund of deducted credits on job failure
+        refunded_amount = 0.0
         try:
             CreditService.refund_credits(
                 user_id=user_id,
                 reference_id=job_id,
-                reason=f"Pipeline error: {str(e)}"
+                reason=f"Pipeline error (after {current_retries} retries): {str(e)}"
             )
+            refunded_amount = float(job.get("credits_deducted", 0.0))
         except Exception as ref_err:
             print(f"[CreditService] Warning: Could not refund {job_id}: {ref_err}")
+
+        # Dispatch failure notification
+        try:
+            notify_job_failed(
+                user_email=job.get("user_email"),
+                job_id=job_id,
+                error_message=str(e),
+                credits_refunded=refunded_amount,
+                user_id=user_id
+            )
+        except Exception:
+            pass
 
         # Update DB job status to error
         try:
@@ -346,7 +385,7 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                 error=str(e)
             )
     finally:
-        if source_file_path:
+        if source_file_path and job.get("status") in ("completed", "error"):
             try:
                 p = Path(source_file_path)
                 if p.exists():
@@ -378,6 +417,17 @@ def extract_user_id(authorization: Optional[str] = None, x_device_id: Optional[s
     return "guest_user"
 
 
+def extract_user_email(authorization: Optional[str] = None) -> Optional[str]:
+    """Extract authenticated user email from Clerk token claims."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1].strip()
+        if token:
+            claims = verify_clerk_token(token)
+            if claims:
+                return claims.get("email") or claims.get("primary_email_address")
+    return None
+
+
 @app.get("/")
 @app.get("/dashboard")
 def get_index():
@@ -404,8 +454,10 @@ class TranscribeRequest(BaseModel):
 
 
 @app.get("/health")
+@app.get("/api/health")
 def health_check():
     """Production health check for container and orchestrator monitoring."""
+    import shutil
     db_connected = False
     try:
         session = get_db_session()
@@ -415,13 +467,39 @@ def health_check():
     except Exception:
         db_connected = False
 
+    storage = get_storage_provider()
+    storage_info = {
+        "provider": storage.provider_type,
+        "is_cloud": storage.provider_type in ("s3", "supabase"),
+        "status": "operational"
+    }
+
+    disk_total_mb = 0
+    disk_free_mb = 0
+    disk_used_percent = 0.0
+    try:
+        total, used, free = shutil.disk_usage(BASE_DIR)
+        disk_total_mb = round(total / (1024 * 1024), 1)
+        disk_free_mb = round(free / (1024 * 1024), 1)
+        disk_used_percent = round((used / total) * 100, 1)
+    except Exception:
+        pass
+
     return {
-        "status": "healthy",
+        "status": "healthy" if db_connected else "degraded",
+        "service": "Clipper AI Video Engine",
         "database": "connected" if db_connected else "disconnected",
+        "storage": storage_info,
         "supabase_connected": is_supabase_enabled(),
         "queue": queue_manager.get_queue_stats(),
+        "disk": {
+            "total_mb": disk_total_mb,
+            "free_mb": disk_free_mb,
+            "used_percent": disk_used_percent
+        },
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
+
 
 
 @app.get("/api/credits")
@@ -623,6 +701,82 @@ def list_credit_packages():
     return {"packages": PaymentService.get_available_packages()}
 
 
+class CheckoutRequest(BaseModel):
+    item_type: str  # "plan" or "credit_package"
+    item_id: str
+    success_url: str
+    cancel_url: str
+
+
+class PortalRequest(BaseModel):
+    return_url: str
+
+
+@app.get("/api/billing/status")
+def get_billing_status():
+    """Returns billing provider configuration status."""
+    return {
+        "stripe_configured": StripeBillingService.is_configured(),
+        "mode": "live" if StripeBillingService.is_configured() else "sandbox",
+        "supported_plans": [p["name"] for p in SubscriptionService.get_plans()],
+        "supported_packages": [p["name"] for p in PaymentService.get_available_packages()]
+    }
+
+
+@app.post("/api/billing/create-checkout")
+def create_billing_checkout(
+    req: CheckoutRequest,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    """Creates a Stripe Checkout Session for subscription or credit purchase."""
+    user_id = extract_user_id(authorization, x_device_id)
+    user_email = extract_user_email(authorization)
+    try:
+        session_info = StripeBillingService.create_checkout_session(
+            user_id=user_id,
+            item_type=req.item_type,
+            item_id=req.item_id,
+            success_url=req.success_url,
+            cancel_url=req.cancel_url,
+            user_email=user_email
+        )
+        return session_info
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Billing error: {str(e)}")
+
+
+@app.post("/api/billing/create-portal")
+def create_customer_portal(
+    req: PortalRequest,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    """Generates customer portal session for managing payment methods and cancelations."""
+    user_id = extract_user_id(authorization, x_device_id)
+    return StripeBillingService.create_customer_portal_session(
+        user_id=user_id,
+        return_url=req.return_url
+    )
+
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request):
+    """Handles signed webhook events from Stripe."""
+    payload_bytes = await request.body()
+    sig_header = request.headers.get("Stripe-Signature")
+    try:
+        result = StripeBillingService.process_webhook_event(payload_bytes, sig_header)
+        return result
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+
 @app.get("/api/user/me")
 def get_current_user_profile(
     authorization: Optional[str] = Header(None),
@@ -773,6 +927,7 @@ def process_video(
     initial_job_data = {
         "job_id": job_id,
         "user_id": user_id,
+        "user_email": extract_user_email(authorization),
         "url": safe_url,
         "count": req.count,
         "status": "processing",
@@ -956,6 +1111,7 @@ async def process_video_upload(
     initial_job_data = {
         "job_id": job_id,
         "user_id": user_id,
+        "user_email": extract_user_email(authorization),
         "url": f"uploaded://{safe_filename}",
         "count": count,
         "status": "processing",

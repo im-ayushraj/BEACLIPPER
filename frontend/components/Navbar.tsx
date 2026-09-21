@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { Scissors, Menu, X, ArrowRight, Sparkles } from "lucide-react";
+import { Scissors, Menu, X, ArrowRight, Sparkles, CreditCard } from "lucide-react";
 import { AppSignedIn, AppSignedOut, AppUserButton } from "@/components/AuthComponents";
+import { PricingModal } from "@/components/PricingModal";
 
 interface NavbarProps {
   currentView?: "landing" | "dashboard" | "split";
@@ -11,6 +12,7 @@ interface NavbarProps {
 
 export function Navbar({ currentView = "landing" }: NavbarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pricingOpen, setPricingOpen] = useState(false);
 
   return (
     <nav className="sticky top-0 z-50 w-full border-b border-white/[0.08] bg-[#090a0f]/80 backdrop-blur-md">
@@ -21,9 +23,6 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
             <Scissors className="h-4 w-4 stroke-[2.5]" />
           </div>
           <span className="text-lg font-bold tracking-tight text-white">Clipper</span>
-          <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold tracking-wide text-zinc-400">
-            V1.0
-          </span>
         </Link>
 
         {/* Desktop Navigation Links */}
@@ -45,6 +44,13 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
               NEW
             </span>
           </Link>
+          <button
+            onClick={() => setPricingOpen(true)}
+            className="flex items-center gap-1.5 transition hover:text-white cursor-pointer"
+          >
+            <CreditCard className="h-3.5 w-3.5 text-emerald-400" />
+            <span>Pricing</span>
+          </button>
           <a href="/#how-it-works" className="transition hover:text-white">
             How it works
           </a>
@@ -117,6 +123,16 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
                 NEW
               </span>
             </Link>
+            <button
+              onClick={() => {
+                setMobileMenuOpen(false);
+                setPricingOpen(true);
+              }}
+              className="flex items-center gap-2.5 py-2 px-3 rounded-lg hover:bg-white/5 hover:text-white text-left w-full text-zinc-300"
+            >
+              <CreditCard className="h-4 w-4 text-emerald-400" />
+              <span>Pricing & Plans</span>
+            </button>
             <a
               href="/#how-it-works"
               onClick={() => setMobileMenuOpen(false)}
@@ -145,6 +161,9 @@ export function Navbar({ currentView = "landing" }: NavbarProps) {
           </div>
         </div>
       )}
+
+      {/* Pricing & Upgrade Modal */}
+      <PricingModal isOpen={pricingOpen} onClose={() => setPricingOpen(false)} />
     </nav>
   );
 }

@@ -18,8 +18,9 @@ import {
   UserUsageSummary,
 } from "@/lib/api/credits";
 import { ProcessingJob, Clip } from "@/types";
-import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, Cpu } from "lucide-react";
+import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, Cpu, CheckCircle2 } from "lucide-react";
 import { useAppAuth } from "@/components/AuthComponents";
+import { PricingModal } from "@/components/PricingModal";
 
 export default function DashboardPage() {
   const { getToken, userId } = useAppAuth();
@@ -31,6 +32,9 @@ export default function DashboardPage() {
   const [generatedClips, setGeneratedClips] = useState<Clip[]>([]);
   const [savedClips, setSavedClips] = useState<Clip[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [paymentBanner, setPaymentBanner] = useState<string | null>(null);
+  const [pricingModalOpen, setPricingModalOpen] = useState(false);
+  const [pricingModalTab, setPricingModalTab] = useState<"plans" | "credits">("plans");
   const [insufficientCreditsError, setInsufficientCreditsError] = useState<{
     required: number;
     available: number;
@@ -69,6 +73,18 @@ export default function DashboardPage() {
     setInsufficientCreditsError(null);
 
     async function loadData() {
+      // Check for Stripe redirect status
+      if (typeof window !== "undefined") {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get("payment") === "success") {
+          setPaymentBanner("Payment successful! Your credits and plan have been updated.");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        } else if (params.get("payment") === "cancelled") {
+          setPaymentBanner("Checkout was cancelled. No charges were made.");
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+      }
+
       try {
         const token = await getToken();
         const data = await getSavedClips(token);
@@ -220,6 +236,11 @@ export default function DashboardPage() {
         currentTab={currentTab}
         onTabChange={setCurrentTab}
         clipsCount={savedClips.length}
+        credits={credits}
+        onOpenPricing={() => {
+          setPricingModalTab("plans");
+          setPricingModalOpen(true);
+        }}
         mobileOpen={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
       />
@@ -230,9 +251,29 @@ export default function DashboardPage() {
           onOpenMobileMenu={() => setMobileSidebarOpen(true)}
           clipsCount={savedClips.length}
           credits={credits}
+          onOpenPricing={() => {
+            setPricingModalTab("plans");
+            setPricingModalOpen(true);
+          }}
         />
 
         <main className="flex-1 p-4 sm:p-8 max-w-6xl w-full mx-auto flex flex-col gap-8">
+          {/* Payment Status Banner */}
+          {paymentBanner && (
+            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex items-center justify-between gap-3 text-emerald-300">
+              <div className="flex items-center gap-2.5 text-sm font-medium">
+                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+                <span>{paymentBanner}</span>
+              </div>
+              <button
+                onClick={() => setPaymentBanner(null)}
+                className="text-xs text-emerald-400/80 hover:text-emerald-300 font-semibold"
+              >
+                Dismiss
+              </button>
+            </div>
+          )}
+
           {/* TAB 1: CLIP STUDIO */}
           {currentTab === "studio" && (
             <div className="flex flex-col gap-8">
@@ -259,10 +300,13 @@ export default function DashboardPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => setCurrentTab("usage")}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-300 shrink-0"
+                    onClick={() => {
+                      setPricingModalTab("credits");
+                      setPricingModalOpen(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-300 shrink-0 cursor-pointer"
                   >
-                    <span>View Plans & Top-ups</span>
+                    <span>Get More Credits</span>
                     <ArrowUpRight className="h-3.5 w-3.5" />
                   </button>
                 </div>
@@ -477,30 +521,36 @@ export default function DashboardPage() {
                       <li>✓ Subtitle style customization</li>
                     </ul>
                     <button
-                      onClick={() => alert("Payment integration will be activated in next release.")}
-                      className="mt-auto w-full rounded-xl bg-white py-2.5 text-xs font-bold text-black transition hover:bg-zinc-200"
+                      onClick={() => {
+                        setPricingModalTab("plans");
+                        setPricingModalOpen(true);
+                      }}
+                      className="mt-auto w-full rounded-xl bg-white py-2.5 text-xs font-bold text-black transition hover:bg-zinc-200 cursor-pointer shadow"
                     >
-                      Subscribe ($15/mo)
+                      Subscribe ($19/mo)
                     </button>
                   </div>
 
                   {/* Pro */}
                   <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 flex flex-col gap-4">
-                    <span className="font-bold text-white">Pro Agency</span>
+                    <span className="font-bold text-white">Pro Studio</span>
                     <div className="text-3xl font-extrabold text-white">
-                      $29<span className="text-sm text-zinc-500 font-normal"> / mo</span>
+                      $49<span className="text-sm text-zinc-500 font-normal"> / mo</span>
                     </div>
                     <ul className="text-xs text-zinc-400 flex flex-col gap-2.5">
-                      <li>✓ 1,500 Monthly Credits</li>
-                      <li>✓ Unlimited concurrent queue slots</li>
-                      <li>✓ Direct cloud webhook export</li>
+                      <li>✓ 2,000 Monthly Credits</li>
+                      <li>✓ Priority processing queue</li>
+                      <li>✓ Cloudflare R2 / S3 signed URLs</li>
                       <li>✓ 24/7 Priority support</li>
                     </ul>
                     <button
-                      onClick={() => alert("Payment integration will be activated in next release.")}
-                      className="mt-auto w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                      onClick={() => {
+                        setPricingModalTab("plans");
+                        setPricingModalOpen(true);
+                      }}
+                      className="mt-auto w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
                     >
-                      Subscribe ($29/mo)
+                      Subscribe ($49/mo)
                     </button>
                   </div>
                 </div>
@@ -508,62 +558,84 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* TAB 4: SETTINGS */}
+          {/* TAB 4: SETTINGS & PREFERENCES */}
           {currentTab === "settings" && (
             <div className="flex flex-col gap-6">
               <div>
-                <h2 className="text-2xl font-bold text-white tracking-tight">Settings</h2>
-                <p className="text-sm text-zinc-400 mt-1">Configure your processing pipeline preferences.</p>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Settings & Preferences</h2>
+                <p className="text-sm text-zinc-400 mt-1">Manage your video processing defaults and account preferences.</p>
               </div>
 
               <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 sm:p-8 flex flex-col gap-6">
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Credit Engine & Billing</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Automated credit tracking with safe refund guarantee</p>
+                    <h4 className="text-sm font-bold text-white">Target Clip Duration</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">Optimized length for TikTok, YouTube Shorts, and Instagram Reels</p>
                   </div>
-                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
-                    <Zap className="h-3.5 w-3.5" />
-                    <span>Real Engine Active</span>
+                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200">
+                    30s – 60s (Standard)
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                   <div>
-                    <h4 className="text-sm font-bold text-white">AI Engine Status</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Google Gemini 2.5 Flash connected via backend .env</p>
+                    <h4 className="text-sm font-bold text-white">Default Video Alignment</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">Frame cropping optimized for mobile vertical feeds</p>
                   </div>
-                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
-                    <ShieldCheck className="h-3.5 w-3.5" />
-                    <span>Operational</span>
+                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200">
+                    9:16 Vertical
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Video Cutting Engine</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">FFmpeg 7.1 with libx264 and aac re-encoding</p>
+                    <h4 className="text-sm font-bold text-white">Automated Subtitle Generation</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">Generate synchronized animated captions for every clip</p>
                   </div>
                   <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
-                    <Zap className="h-3.5 w-3.5" />
-                    <span>Hardware Ready</span>
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    <span>Always Enabled</span>
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Default Target Duration</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Clips are verified and aligned strictly between 30 and 60 seconds</p>
+                    <h4 className="text-sm font-bold text-white">Storage Retention</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">Rendered clips are safely available in your cloud dashboard for 24 hours</p>
                   </div>
-                  <span className="rounded-lg bg-zinc-800 px-3 py-1 text-xs font-mono text-zinc-300">
-                    30s – 60s
+                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300">
+                    24h Ephemeral Window
                   </span>
+                </div>
+
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                  <div>
+                    <h4 className="text-sm font-bold text-white">Subscription & Plan Upgrades</h4>
+                    <p className="text-xs text-zinc-400 mt-0.5">View your quota, change monthly plans, or purchase instant credit boost packs</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      setPricingModalTab("plans");
+                      setPricingModalOpen(true);
+                    }}
+                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-bold text-white transition shrink-0 cursor-pointer shadow"
+                  >
+                    <span>Manage Plans & Upgrades</span>
+                    <ArrowUpRight className="h-3.5 w-3.5" />
+                  </button>
                 </div>
               </div>
             </div>
           )}
         </main>
       </div>
+
+      {/* Stripe Billing & Upgrade Modal */}
+      <PricingModal
+        isOpen={pricingModalOpen}
+        onClose={() => setPricingModalOpen(false)}
+        defaultTab={pricingModalTab}
+      />
     </div>
   );
 }

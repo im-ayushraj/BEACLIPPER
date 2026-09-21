@@ -397,7 +397,7 @@ export function UrlInput({
             <p className="text-xs text-zinc-500">
               {detectedDuration
                 ? `Estimated credits: ~${Math.ceil((detectedDuration / 60) * 2.0)} credits`
-                : "Direct file clipping with Gemini speech-to-text"}
+                : "Direct file clipping with AI transcription"}
             </p>
 
             <button

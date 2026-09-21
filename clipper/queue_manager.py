@@ -14,8 +14,9 @@ from typing import Dict, List, Set, Optional, Callable, Any, Tuple
 
 
 class JobQueueManager:
-    def __init__(self, max_concurrent_jobs: int = 2):
+    def __init__(self, max_concurrent_jobs: int = 2, max_retries: int = 2):
         self.max_concurrent_jobs = int(os.getenv("MAX_CONCURRENT_JOBS", str(max_concurrent_jobs)))
+        self.max_retries = int(os.getenv("MAX_JOB_RETRIES", str(max_retries)))
         self.lock = threading.Lock()
         
         # State tracking
@@ -215,6 +216,33 @@ class JobQueueManager:
             session.close()
         except Exception:
             pass
+
+    def record_retry(self, job_id: str, error_msg: str) -> int:
+        """Increment retry count in memory and DB. Returns the new retry count."""
+        new_count = 1
+        with self.lock:
+            if job_id in self.jobs:
+                new_count = self.jobs[job_id].get("retry_count", 0) + 1
+                self.jobs[job_id]["retry_count"] = new_count
+                self.jobs[job_id]["status"] = "retrying"
+                self.jobs[job_id]["current_message"] = (
+                    f"Transient failure ({error_msg[:60]}). Retrying attempt #{new_count}/{self.max_retries}..."
+                )
+
+        try:
+            from clipper.db import get_db_session, ProcessingJobModel
+            session = get_db_session()
+            db_job = session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                db_job.retry_count = new_count
+                db_job.status = "retrying"
+                db_job.error = f"Retry {new_count}: {error_msg[:200]}"
+                session.commit()
+            session.close()
+        except Exception:
+            pass
+
+        return new_count
 
     def recover_crashed_jobs_on_startup(self):
         """

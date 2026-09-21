@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Scissors } from "lucide-react";
 
 export function Footer() {
@@ -12,15 +13,18 @@ export function Footer() {
           <span className="text-zinc-600 font-normal">© 2026 Clipper Systems Inc.</span>
         </div>
 
-        <div className="flex items-center gap-6 text-zinc-400">
-          <a href="#how-it-works" className="hover:text-white transition">
-            How it works
-          </a>
-          <a href="#preview" className="hover:text-white transition">
-            Preview
-          </a>
-          <span className="text-zinc-700">•</span>
-          <span>Powered by Gemini 2.5 & FFmpeg</span>
+        <div className="flex flex-wrap items-center gap-6 text-zinc-400">
+          <Link href="/terms" className="hover:text-white transition">
+            Terms of Service
+          </Link>
+          <Link href="/privacy" className="hover:text-white transition">
+            Privacy Policy
+          </Link>
+          <Link href="/refund" className="hover:text-white transition">
+            Refund Policy
+          </Link>
+          <span className="text-zinc-700 hidden sm:inline">•</span>
+          <span>Built for modern video creators</span>
         </div>
       </div>
     </footer>

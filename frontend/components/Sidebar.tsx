@@ -8,6 +8,8 @@ interface SidebarProps {
   currentTab: "studio" | "my-clips" | "usage" | "settings";
   onTabChange: (tab: "studio" | "my-clips" | "usage" | "settings") => void;
   clipsCount?: number;
+  credits?: number;
+  onOpenPricing?: () => void;
   mobileOpen?: boolean;
   onCloseMobile?: () => void;
 }
@@ -16,6 +18,8 @@ export function Sidebar({
   currentTab,
   onTabChange,
   clipsCount = 0,
+  credits = 100,
+  onOpenPricing,
   mobileOpen = false,
   onCloseMobile,
 }: SidebarProps) {
@@ -36,7 +40,7 @@ export function Sidebar({
       id: "usage" as const,
       label: "Usage & Plan",
       icon: BarChart2,
-      badge: "Free",
+      badge: null,
     },
     {
       id: "settings" as const,
@@ -69,9 +73,6 @@ export function Sidebar({
               <Scissors className="h-3.5 w-3.5 stroke-[2.5]" />
             </div>
             <span className="font-bold text-white tracking-tight">Clipper</span>
-            <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-zinc-400">
-              V1.0
-            </span>
           </Link>
 
           <Link
@@ -119,32 +120,31 @@ export function Sidebar({
           })}
         </div>
 
-        {/* Future Subscription / Usage Card */}
+        {/* Subscription / Plan Quick Info */}
         <div className="p-3 border-t border-white/[0.08]">
           <div className="rounded-xl border border-white/[0.08] bg-[#11141c] p-3.5 flex flex-col gap-2.5">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-white">Daily Usage</span>
-              <span className="text-[11px] text-zinc-400">Resets in 14h</span>
-            </div>
-
-            {/* Usage Progress Bar */}
-            <div className="h-2 w-full rounded-full bg-white/[0.06] overflow-hidden">
-              <div
-                className="h-full rounded-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${Math.min(100, Math.max(20, (clipsCount / 10) * 100))}%` }}
-              />
+              <span className="font-semibold text-white">Credit Balance</span>
+              <span className="font-bold text-amber-400">{credits} Credits</span>
             </div>
 
             <div className="flex items-center justify-between text-[11px] text-zinc-400">
-              <span>{clipsCount} / 10 clips used</span>
-              <span className="font-medium text-emerald-400">Free Tier</span>
+              <span>{clipsCount} {clipsCount === 1 ? "clip" : "clips"} in library</span>
+              <span className="font-medium text-emerald-400">Active</span>
             </div>
 
             <button
-              onClick={() => alert("Subscription tiers (Pro & Enterprise) will launch in V2.")}
-              className="mt-1 flex items-center justify-center gap-1 rounded-lg border border-white/10 bg-white/[0.03] py-1.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+              onClick={() => {
+                if (onOpenPricing) {
+                  onOpenPricing();
+                } else {
+                  onTabChange("usage");
+                }
+                if (onCloseMobile) onCloseMobile();
+              }}
+              className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 py-1.5 text-xs font-semibold text-blue-300 transition hover:bg-blue-600/30 hover:text-white cursor-pointer"
             >
-              <span>Upgrade to Pro</span>
+              <span>Get Credits / Upgrade</span>
               <ArrowUpRight className="h-3 w-3" />
             </button>
           </div>

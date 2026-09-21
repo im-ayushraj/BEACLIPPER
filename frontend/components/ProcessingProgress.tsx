@@ -16,7 +16,7 @@ export function ProcessingProgress({ job }: ProcessingProgressProps) {
     { key: "transcript", defaultLabel: "Generating timestamped transcript" },
     { key: "ai_moments", defaultLabel: "Finding the best moments with AI" },
     { key: "context_verify", defaultLabel: "Reviewing candidate clips & context" },
-    { key: "ffmpeg_render", defaultLabel: "Rendering clips with FFmpeg" },
+    { key: "ffmpeg_render", defaultLabel: "Rendering & encoding viral clips" },
     { key: "finalizing", defaultLabel: "Finalizing metadata & previews" },
   ];
 

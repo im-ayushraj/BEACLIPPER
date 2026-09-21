@@ -39,7 +39,7 @@ export function Hero() {
               </div>
               <h3 className="mt-5 text-xl font-bold text-white">AI Video Clipper</h3>
               <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
-                Paste any YouTube link, podcast, or lecture. Gemini transcribes and detects high-impact viral moments and cuts frame-accurate 30–60s shorts.
+                Paste any YouTube link, podcast, or lecture. Advanced AI transcribes and detects high-impact viral moments and cuts frame-accurate 30–60s shorts.
               </p>
               <ul className="mt-4 space-y-2 text-xs text-zinc-400">
                 <li className="flex items-center gap-2">
@@ -82,7 +82,7 @@ export function Hero() {
               </div>
               <h3 className="mt-5 text-xl font-bold text-white">Split Video</h3>
               <p className="mt-2 text-sm text-zinc-400 leading-relaxed">
-                Upload any video and split it sequentially into equal-duration segments. Pure, deterministic FFmpeg cutting with zero AI and no transcripts.
+                Upload any video and split it sequentially into equal-duration segments. Lightning-fast lossless cutting with zero quality reduction.
               </p>
               <ul className="mt-4 space-y-2 text-xs text-zinc-400">
                 <li className="flex items-center gap-2">
@@ -115,12 +115,12 @@ export function Hero() {
         <div className="mt-12 flex items-center justify-center gap-6 text-xs text-zinc-500">
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5 text-zinc-400" />
-            <span>Frame-accurate FFmpeg cuts</span>
+            <span>Lossless frame-accurate cuts</span>
           </div>
           <span className="h-3 w-[1px] bg-zinc-800"></span>
           <div className="flex items-center gap-1.5">
             <CheckCircle2 className="h-3.5 w-3.5 text-zinc-400" />
-            <span>Gemini 2.5 Flash analysis</span>
+            <span>Deep semantic AI detection</span>
           </div>
           <span className="h-3 w-[1px] bg-zinc-800 hidden sm:inline"></span>
           <div className="hidden sm:flex items-center gap-1.5">
