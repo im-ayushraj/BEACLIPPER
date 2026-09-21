@@ -16,10 +16,6 @@ interface VideoPlayerProps {
   poster?: string;
   className?: string;
   aspectRatio?: "16:9" | "9:16" | "auto";
-  initialStart?: number;
-  initialEnd?: number;
-  showTrimControls?: boolean;
-  onOpenTheater?: () => void;
 }
 
 const PLAYBACK_RATES = [1, 1.25, 1.5, 2];
@@ -29,10 +25,6 @@ export function VideoPlayer({
   poster,
   className = "",
   aspectRatio = "auto",
-  initialStart = 0,
-  initialEnd,
-  showTrimControls = false,
-  onOpenTheater,
 }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -54,33 +46,23 @@ export function VideoPlayer({
   // Sync video duration
   const handleLoadedMetadata = () => {
     if (!videoRef.current) return;
-    const d = videoRef.current.duration || 0;
-    setDuration(d);
+    setDuration(videoRef.current.duration || 0);
   };
 
   const handleTimeUpdate = () => {
     if (!videoRef.current || isScrubbing) return;
-    const now = videoRef.current.currentTime;
-    setCurrentTime(now);
-
-    if (showTrimControls && initialEnd && initialEnd > initialStart && now >= initialEnd) {
-      videoRef.current.currentTime = initialStart;
-      videoRef.current.play().catch(() => {});
-    }
+    setCurrentTime(videoRef.current.currentTime);
   };
 
   const togglePlay = useCallback(() => {
     if (!videoRef.current) return;
     if (videoRef.current.paused || videoRef.current.ended) {
-      if (showTrimControls && initialEnd && (videoRef.current.currentTime < initialStart || videoRef.current.currentTime >= initialEnd)) {
-        videoRef.current.currentTime = initialStart;
-      }
       videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
     } else {
       videoRef.current.pause();
       setIsPlaying(false);
     }
-  }, [showTrimControls, initialStart, initialEnd]);
+  }, []);
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
     const val = parseFloat(e.target.value);
@@ -306,7 +288,7 @@ export function VideoPlayer({
             </div>
           </div>
 
-          {/* Right Controls: Speed Selector, Theater, Fullscreen */}
+          {/* Right Controls: Speed Selector, Fullscreen */}
           <div className="flex items-center gap-2 relative">
             {/* Speed Selector */}
             <div className="relative">
@@ -320,7 +302,7 @@ export function VideoPlayer({
               </button>
 
               {showSpeedMenu && (
-                <div className="absolute bottom-full right-0 mb-2 rounded-lg border border-white/10 bg-[#141721] p-1 shadow-2xl z-50 flex flex-col min-w-[70px]">
+                <div className="absolute bottom-full right-0 mb-2 rounded-lg border border-white/10 bg-[#141722] p-1 shadow-2xl z-50 flex flex-col min-w-[70px]">
                   {PLAYBACK_RATES.map((rate) => (
                     <button
                       key={rate}
@@ -338,18 +320,6 @@ export function VideoPlayer({
                 </div>
               )}
             </div>
-
-            {/* Optional Theater Mode trigger */}
-            {onOpenTheater && (
-              <button
-                type="button"
-                onClick={onOpenTheater}
-                className="p-1 rounded hover:text-white transition"
-                title="Theater View & Trim"
-              >
-                <Maximize className="h-3.5 w-3.5" />
-              </button>
-            )}
 
             {/* Native Fullscreen */}
             <button
