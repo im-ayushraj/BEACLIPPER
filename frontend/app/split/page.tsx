@@ -541,9 +541,9 @@ export default function SplitVideoPage() {
 
             {/* Clips Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {currentJob.clips.map((clip) => (
+              {currentJob.clips.map((clip, index) => (
                 <div
-                  key={clip.filename}
+                  key={`${clip.filename}-${index}`}
                   className="rounded-xl border border-white/[0.08] bg-[#111318] overflow-hidden flex flex-col transition hover:border-white/20 shadow-sm"
                 >
                   {/* Video Player */}

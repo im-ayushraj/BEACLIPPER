@@ -72,7 +72,7 @@ export function ClipGrid({ clips, videoTitle, onReset, onDeleteClip }: ClipGridP
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedClips.map((clip, index) => (
           <ClipCard
-            key={clip.file || (clip as any).id || (clip as any).storage_path || `clip-${index}`}
+            key={clip.id || `${clip.job_id || "job"}-${clip.file || "clip"}-${clip.start ?? index}-${index}`}
             clip={clip}
             index={index}
             onDelete={onDeleteClip}
