@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import "./globals.css";
 import { AppClerkProvider } from "@/components/AuthComponents";
+import { PageLoader } from "@/components/PageLoader";
 
 export const metadata: Metadata = {
   title: "Clipper — Turn Long Videos Into Engaging Shorts Automatically",
@@ -40,7 +41,10 @@ export default function RootLayout({
         )}
       </head>
       <body className="min-h-screen bg-[#090a0f] text-white flex flex-col antialiased">
-        <AppClerkProvider>{children}</AppClerkProvider>
+        <AppClerkProvider>
+          <PageLoader />
+          {children}
+        </AppClerkProvider>
       </body>
     </html>
   );
