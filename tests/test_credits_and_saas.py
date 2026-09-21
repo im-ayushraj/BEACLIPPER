@@ -155,8 +155,8 @@ class TestCreditEngineAndSaaS(unittest.TestCase):
         init_balance = CreditService.get_balance(self.test_user)
         self.assertEqual(init_balance, 100.0)
 
-        # Create a mock video file for split request
-        test_video_bytes = b"\x00" * 1024
+        # Create a mock video file for split request (with valid MP4 ftyp container header)
+        test_video_bytes = b"\x00\x00\x00\x20ftypisom" + (b"\x00" * 1024)
         files = {"video": ("sample.mp4", test_video_bytes, "video/mp4")}
         data = {"duration": "30"}
 

@@ -148,9 +148,167 @@ class JobQueueManager:
             self._spawn_worker(jid, url, count, uid, source_file_path=s_path)
 
     def get_job(self, job_id: str) -> Optional[Dict[str, Any]]:
-        """Get job data by ID."""
+        """Get job data by ID with persistent DB fallback."""
         with self.lock:
-            return self.jobs.get(job_id)
+            if job_id in self.jobs:
+                return self.jobs[job_id]
+
+        # Fallback to persistent database on cache miss or after server restart
+        try:
+            import json
+            from clipper.db import get_db_session, ProcessingJobModel
+            session = get_db_session()
+            db_job = session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                meta = {}
+                if db_job.metadata_json:
+                    try:
+                        meta = json.loads(db_job.metadata_json)
+                    except Exception:
+                        meta = {}
+                data = {
+                    "job_id": db_job.job_id,
+                    "user_id": db_job.user_id,
+                    "status": db_job.status,
+                    "stage": db_job.stage,
+                    "progress_percent": db_job.progress_percent,
+                    "url": db_job.url,
+                    "duration": db_job.duration_seconds,
+                    "credits_deducted": db_job.credits_deducted,
+                    "error": db_job.error,
+                    "current_message": meta.get("current_message", f"Status: {db_job.status}"),
+                    "steps": meta.get("steps", {}),
+                    "clips": meta.get("clips", []),
+                    "video": meta.get("video", {"duration": db_job.duration_seconds}),
+                    "created_at": db_job.created_at.timestamp() if db_job.created_at else time.time(),
+                }
+                session.close()
+                return data
+            session.close()
+        except Exception as e:
+            print(f"[QueueManager] Warning reading DB job {job_id}: {e}")
+
+        return None
+
+    def update_heartbeat(self, job_id: str, progress: Optional[int] = None, stage: Optional[str] = None):
+        """Update job heartbeat timestamp to prevent timeout termination."""
+        with self.lock:
+            if job_id in self.jobs:
+                self.jobs[job_id]["heartbeat_at"] = time.time()
+                if progress is not None:
+                    self.jobs[job_id]["progress_percent"] = progress
+                if stage is not None:
+                    self.jobs[job_id]["stage"] = stage
+
+        try:
+            from datetime import datetime, timezone
+            from clipper.db import get_db_session, ProcessingJobModel
+            session = get_db_session()
+            db_job = session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                db_job.heartbeat_at = datetime.now(timezone.utc)
+                if progress is not None:
+                    db_job.progress_percent = progress
+                if stage is not None:
+                    db_job.stage = stage
+                session.commit()
+            session.close()
+        except Exception:
+            pass
+
+    def recover_crashed_jobs_on_startup(self):
+        """
+        Scans persistent DB on application startup.
+        Any jobs left in 'processing' or 'queued' from a previous server session
+        are marked as failed and credits are safely refunded.
+        """
+        try:
+            from datetime import datetime, timezone
+            from clipper.db import get_db_session, ProcessingJobModel
+            from clipper.credit_service import CreditService
+
+            session = get_db_session()
+            stale_jobs = session.query(ProcessingJobModel).filter(
+                ProcessingJobModel.status.in_(["processing", "queued"])
+            ).all()
+
+            recovered_count = 0
+            for job in stale_jobs:
+                job.status = "error"
+                job.error = "Job interrupted by server restart or maintenance. Deducted credits refunded."
+                job.completed_at = datetime.now(timezone.utc)
+
+                # Automatic refund of debited credits
+                if job.credits_deducted and job.credits_deducted > 0:
+                    try:
+                        CreditService.refund_credits(
+                            user_id=job.user_id,
+                            reference_id=job.job_id,
+                            reason="Server restart recovery refund"
+                        )
+                    except Exception as r_err:
+                        print(f"[Recovery] Warning refunding {job.job_id}: {r_err}")
+
+                recovered_count += 1
+
+            if recovered_count > 0:
+                session.commit()
+                print(f"[Recovery] Successfully recovered {recovered_count} crashed/interrupted jobs from previous session.")
+            session.close()
+        except Exception as e:
+            print(f"[Recovery] Notice: Crash recovery check: {e}")
+
+    def start_timeout_supervisor(self, check_interval_seconds: int = 60, timeout_minutes: int = 15):
+        """
+        Starts a background daemon thread that monitors jobs in 'processing'.
+        If a job has had no heartbeat for > timeout_minutes, it is terminated and refunded.
+        """
+        def _monitor():
+            while True:
+                time.sleep(check_interval_seconds)
+                try:
+                    from datetime import datetime, timezone, timedelta
+                    from clipper.db import get_db_session, ProcessingJobModel
+                    from clipper.credit_service import CreditService
+
+                    threshold = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
+                    session = get_db_session()
+                    hung_jobs = session.query(ProcessingJobModel).filter(
+                        ProcessingJobModel.status == "processing",
+                        ProcessingJobModel.heartbeat_at < threshold
+                    ).all()
+
+                    for h_job in hung_jobs:
+                        print(f"[Supervisor] Terminating hung job {h_job.job_id} (last heartbeat: {h_job.heartbeat_at})")
+                        h_job.status = "error"
+                        h_job.error = f"Processing timeout exceeded ({timeout_minutes} mins). Automatic credit refund applied."
+                        h_job.completed_at = datetime.now(timezone.utc)
+
+                        with self.lock:
+                            if h_job.job_id in self.running_job_ids:
+                                self.running_job_ids.remove(h_job.job_id)
+                            if h_job.job_id in self.jobs:
+                                self.jobs[h_job.job_id]["status"] = "error"
+                                self.jobs[h_job.job_id]["error"] = h_job.error
+
+                        if h_job.credits_deducted and h_job.credits_deducted > 0:
+                            try:
+                                CreditService.refund_credits(
+                                    user_id=h_job.user_id,
+                                    reference_id=h_job.job_id,
+                                    reason=f"Processing timeout refund ({timeout_minutes}m limit)"
+                                )
+                            except Exception:
+                                pass
+
+                    if hung_jobs:
+                        session.commit()
+                    session.close()
+                except Exception as e:
+                    print(f"[Supervisor] Warning during timeout check: {e}")
+
+        supervisor_thread = threading.Thread(target=_monitor, daemon=True, name="JobTimeoutSupervisor")
+        supervisor_thread.start()
 
     def get_queue_stats(self) -> Dict[str, Any]:
         """Summary of queue state for health metrics."""

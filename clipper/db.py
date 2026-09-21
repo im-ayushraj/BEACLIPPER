@@ -17,6 +17,7 @@ from sqlalchemy import (
     Boolean,
     DateTime,
     Text,
+    text,
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
@@ -89,6 +90,10 @@ class ProcessingJobModel(Base):
     credits_deducted = Column(Float, default=0.0)
     error = Column(Text, nullable=True)
     idempotency_key = Column(String(128), nullable=True, index=True)
+    heartbeat_at = Column(DateTime, default=get_utc_now, onupdate=get_utc_now, index=True)
+    retry_count = Column(Integer, default=0)
+    metadata_json = Column(Text, nullable=True)
+    worker_id = Column(String(64), nullable=True)
     created_at = Column(DateTime, default=get_utc_now, index=True)
     completed_at = Column(DateTime, nullable=True)
 
@@ -206,6 +211,20 @@ def init_db():
 
     # Create tables
     Base.metadata.create_all(bind=_engine)
+
+    # Lightweight safe schema migrations for processing_jobs
+    with _engine.connect() as conn:
+        for col_sql in [
+            "ALTER TABLE processing_jobs ADD COLUMN heartbeat_at TIMESTAMP;",
+            "ALTER TABLE processing_jobs ADD COLUMN retry_count INTEGER DEFAULT 0;",
+            "ALTER TABLE processing_jobs ADD COLUMN metadata_json TEXT;",
+            "ALTER TABLE processing_jobs ADD COLUMN worker_id VARCHAR(64);"
+        ]:
+            try:
+                conn.execute(text(col_sql))
+                conn.commit()
+            except Exception:
+                pass
 
     # Seed default credit rules & plans
     seed_defaults()

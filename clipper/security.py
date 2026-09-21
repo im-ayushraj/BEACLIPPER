@@ -114,3 +114,105 @@ def verify_clerk_token(token: str) -> Optional[Dict[str, Any]]:
             return unverified
         except Exception:
             return None
+
+
+def sanitize_upload_filename(filename: Optional[str]) -> str:
+    """
+    Sanitizes an uploaded filename to prevent directory traversal and path injection.
+    Only allows alphanumeric characters, underscores, hyphens, and a valid extension.
+    """
+    if not filename:
+        return "uploaded_video.mp4"
+
+    # Strip any path information (POSIX or Windows)
+    clean_name = os.path.basename(filename).replace("\\", "/").split("/")[-1]
+    
+    # Remove any null bytes or control characters
+    clean_name = re.sub(r"[\x00-\x1f\x7f]", "", clean_name)
+
+    # Separate base and extension
+    dot_idx = clean_name.rfind(".")
+    if dot_idx > 0:
+        base = clean_name[:dot_idx]
+        ext = clean_name[dot_idx:].lower()
+    else:
+        base = clean_name
+        ext = ".mp4"
+
+    # Sanitize base: allow only alphanumeric, underscores, hyphens
+    safe_base = re.sub(r"[^\w\-]", "_", base)
+    safe_base = re.sub(r"_+", "_", safe_base).strip("_")
+    if not safe_base:
+        safe_base = "uploaded_video"
+
+    # Whitelist allowed extensions
+    allowed_exts = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".flv", ".m4v"}
+    if ext not in allowed_exts:
+        ext = ".mp4"
+
+    return f"{safe_base[:80]}{ext}"
+
+
+def validate_video_magic_bytes(file_path: str | os.PathLike) -> str:
+    """
+    Validates file container header binary signatures (magic bytes) to verify that
+    the uploaded file is truly a video container and not a disguised binary or executable.
+    Returns the detected format string or raises ValueError.
+    """
+    from pathlib import Path
+    p = Path(file_path)
+    if not p.exists() or p.stat().st_size < 32:
+        raise ValueError("Invalid file: File is empty or too small to be a valid video container.")
+
+    with open(p, "rb") as f:
+        header = f.read(64)
+
+    # 1. MP4 / MOV / M4V / 3GP (ISO Base Media File Format)
+    # Typically has 'ftyp' at bytes 4-8, or 'moov'/'mdat'/'wide'
+    if len(header) >= 8 and header[4:8] in (b"ftyp", b"moov", b"wide", b"mdat", b"skip"):
+        return "mp4"
+
+    # 2. WebM / MKV (EBML container identifier: 0x1A 0x45 0xDF 0xA3)
+    if len(header) >= 4 and header[:4] == b"\x1a\x45\xdf\xa3":
+        return "webm/mkv"
+
+    # 3. AVI (RIFF container with 'AVI ' form-type at bytes 8-12)
+    if len(header) >= 12 and header[:4] == b"RIFF" and header[8:12] in (b"AVI ", b"AVIX"):
+        return "avi"
+
+    # 4. FLV (Flash Video: 'FLV\x01')
+    if len(header) >= 4 and header[:3] == b"FLV":
+        return "flv"
+
+    # 5. MPEG-TS (Sync byte 0x47 every 188 bytes)
+    if len(header) >= 1 and header[0] == 0x47:
+        return "ts"
+
+    # 6. MPEG Program Stream (0x00 0x00 0x01 0xBA)
+    if len(header) >= 4 and header[:4] == b"\x00\x00\x01\xba":
+        return "mpg"
+
+    raise ValueError(
+        "Security validation failed: File binary header signature is not a recognized video format. "
+        "Executable scripts and disguised binary files are strictly prohibited."
+    )
+
+
+def validate_upload_size(file_path: str | os.PathLike, max_size_bytes: int = 500 * 1024 * 1024) -> int:
+    """
+    Enforces maximum file size limit on uploaded video files.
+    Default limit is 500MB (524,288,000 bytes).
+    """
+    from pathlib import Path
+    p = Path(file_path)
+    if not p.exists():
+        raise ValueError("Uploaded file does not exist on disk.")
+
+    size = p.stat().st_size
+    if size > max_size_bytes:
+        size_mb = round(size / (1024 * 1024), 1)
+        max_mb = round(max_size_bytes / (1024 * 1024))
+        raise ValueError(
+            f"File size limit exceeded: Uploaded file is {size_mb} MB, but maximum allowed size is {max_mb} MB."
+        )
+    return size

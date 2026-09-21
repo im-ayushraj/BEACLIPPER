@@ -53,6 +53,16 @@ export class SplitterApiError extends Error {
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 
+export function getSplitterDeviceId(): string {
+  if (typeof window === "undefined") return "server_rendered";
+  let id = localStorage.getItem("beaclipper_device_id");
+  if (!id) {
+    id = "dev_" + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    localStorage.setItem("beaclipper_device_id", id);
+  }
+  return id;
+}
+
 /**
  * Upload video file and begin sequential fixed-duration splitting.
  * Supports XMLHttpRequest for granular upload progress tracking.
@@ -61,7 +71,8 @@ const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "";
 export async function uploadAndStartSplit(
   file: File,
   duration: number,
-  onUploadProgress?: (percent: number) => void
+  onUploadProgress?: (percent: number) => void,
+  token?: string | null
 ): Promise<{ job_id: string; status: string; total_clips: number; video_info: SplitVideoInfo }> {
   if (!file) {
     throw new SplitterApiError("Please select a valid video file to split.");
@@ -78,6 +89,11 @@ export async function uploadAndStartSplit(
     const xhr = new XMLHttpRequest();
     const endpoint = BACKEND_URL ? `${BACKEND_URL}/api/split` : "/api/split";
     xhr.open("POST", endpoint);
+
+    xhr.setRequestHeader("X-Device-Id", getSplitterDeviceId());
+    if (token) {
+      xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    }
 
     if (xhr.upload && onUploadProgress) {
       xhr.upload.onprogress = (event) => {
@@ -112,10 +128,17 @@ export async function uploadAndStartSplit(
 /**
  * Poll live status of a splitting job.
  */
-export async function getSplitJobStatus(jobId: string): Promise<SplitJobStatus> {
+export async function getSplitJobStatus(jobId: string, token?: string | null): Promise<SplitJobStatus> {
   try {
     const endpoint = BACKEND_URL ? `${BACKEND_URL}/api/split/status/${jobId}` : `/api/split/status/${jobId}`;
-    const res = await fetch(endpoint);
+    const headers: Record<string, string> = {
+      "X-Device-Id": getSplitterDeviceId(),
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(endpoint, { headers });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new SplitterApiError(err.detail || "Failed to fetch split job status.", res.status);
@@ -130,13 +153,21 @@ export async function getSplitJobStatus(jobId: string): Promise<SplitJobStatus> 
 /**
  * Returns URL to download the bulk ZIP file of all clips.
  */
-export function getDownloadAllZipUrl(jobId: string): string {
-  return BACKEND_URL ? `${BACKEND_URL}/api/split/download-all/${jobId}` : `/api/split/download-all/${jobId}`;
+export function getDownloadAllZipUrl(jobId: string, token?: string | null): string {
+  const base = BACKEND_URL ? `${BACKEND_URL}/api/split/download-all/${jobId}` : `/api/split/download-all/${jobId}`;
+  const params = new URLSearchParams();
+  params.set("device_id", getSplitterDeviceId());
+  if (token) params.set("token", token);
+  return `${base}?${params.toString()}`;
 }
 
 /**
  * Returns URL to download a single clip directly.
  */
-export function getIndividualClipDownloadUrl(jobId: string, filename: string): string {
-  return BACKEND_URL ? `${BACKEND_URL}/api/split/download/${jobId}/${filename}` : `/api/split/download/${jobId}/${filename}`;
+export function getIndividualClipDownloadUrl(jobId: string, filename: string, token?: string | null): string {
+  const base = BACKEND_URL ? `${BACKEND_URL}/api/split/download/${jobId}/${filename}` : `/api/split/download/${jobId}/${filename}`;
+  const params = new URLSearchParams();
+  params.set("device_id", getSplitterDeviceId());
+  if (token) params.set("token", token);
+  return `${base}?${params.toString()}`;
 }

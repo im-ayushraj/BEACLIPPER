@@ -25,7 +25,13 @@ from sqlalchemy import text
 
 from clipper.pipeline import ClipperPipeline
 from clipper.cleanup import start_retention_sweeper
-from clipper.security import sanitize_and_validate_youtube_url, verify_clerk_token
+from clipper.security import (
+    sanitize_and_validate_youtube_url,
+    verify_clerk_token,
+    sanitize_upload_filename,
+    validate_video_magic_bytes,
+    validate_upload_size,
+)
 from clipper.downloader import (
     get_video_metadata_preflight,
     VideoDurationLimitExceeded,
@@ -102,12 +108,22 @@ SPLIT_TEMP_DIR.mkdir(exist_ok=True)
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
 
-# Launch 24-hour server retention background cleaner (sweeps immediately & every hour)
-start_retention_sweeper(OUTPUT_DIR, TEMP_DIR, interval_seconds=3600, max_age_seconds=86400)
+# Launch storage retention background cleaner (sweeps 1h source videos & 24h clips immediately & every hour)
+start_retention_sweeper(
+    output_dirs=[OUTPUT_DIR, SPLIT_OUTPUT_DIR],
+    temp_dirs=[TEMP_DIR, SPLIT_TEMP_DIR],
+    interval_seconds=3600,
+    max_clip_age_seconds=86400,
+    max_source_age_seconds=3600
+)
 
 # Job Queue & Concurrency Manager (Max 2 concurrent processing jobs)
 queue_manager = JobQueueManager(max_concurrent_jobs=2)
 jobs: Dict[str, Dict[str, Any]] = queue_manager.jobs
+
+# Crash recovery on server startup & background timeout supervisor
+queue_manager.recover_crashed_jobs_on_startup()
+queue_manager.start_timeout_supervisor(check_interval_seconds=60, timeout_minutes=15)
 
 
 class ProcessRequest(BaseModel):
@@ -175,6 +191,9 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             steps["ffmpeg_render"]["status"] = "completed"
             steps["finalizing"]["status"] = "processing"
             job["progress_percent"] = 98
+
+        # Update heartbeat and DB progress
+        queue_manager.update_heartbeat(job_id, progress=job.get("progress_percent"), stage=job.get("stage"))
 
     try:
         pipeline = ClipperPipeline(
@@ -339,18 +358,23 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
 queue_manager.set_worker(run_pipeline_task)
 
 
-def extract_user_id(authorization: Optional[str] = None) -> str:
-    """Extract authenticated user ID using cryptographic Clerk JWKS verification."""
-    if not authorization or not authorization.startswith("Bearer "):
-        return "guest_user"
-    token = authorization.split(" ")[1].strip()
-    if not token:
-        return "guest_user"
+def extract_user_id(authorization: Optional[str] = None, x_device_id: Optional[str] = None) -> str:
+    """Extract authenticated user ID using cryptographic Clerk JWKS verification, with device fallback."""
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1].strip()
+        if token:
+            claims = verify_clerk_token(token)
+            if claims:
+                uid = claims.get("sub") or claims.get("user_id")
+                if uid:
+                    return str(uid)
     
-    # Cryptographically verify token signature against Clerk JWKS
-    claims = verify_clerk_token(token)
-    if claims:
-        return claims.get("sub") or claims.get("user_id") or "guest_user"
+    # Scoped device ID fallback for guest users to prevent cross-tenant collisions
+    if x_device_id:
+        clean_dev = re.sub(r"[^\w\-]", "", x_device_id)[:48]
+        if clean_dev:
+            return f"guest_{clean_dev}"
+
     return "guest_user"
 
 
@@ -401,9 +425,12 @@ def health_check():
 
 
 @app.get("/api/credits")
-def get_user_credits(authorization: Optional[str] = Header(None)):
+def get_user_credits(
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
     """Retrieve authenticated user's current credit balance."""
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
     balance = CreditService.get_balance(user_id)
     return {
         "user_id": user_id,
@@ -416,10 +443,11 @@ def get_user_credits(authorization: Optional[str] = Header(None)):
 def get_user_transactions(
     limit: int = 50,
     offset: int = 0,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
 ):
     """Retrieve paginated audit log of credit transactions for authenticated user."""
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
     txs = CreditService.get_transactions(user_id, limit=limit, offset=offset)
     return {
         "user_id": user_id,
@@ -433,10 +461,11 @@ def estimate_operation_cost(
     operation: str = "ai_clipper",
     duration_seconds: Optional[float] = None,
     url: Optional[str] = None,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
 ):
     """Pre-flight credit cost estimation before starting expensive processing."""
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # Rate limit check on estimation
     allowed, _, retry_after = estimate_limiter.is_allowed(user_id, max_requests=30, window_seconds=60)
@@ -463,13 +492,14 @@ def estimate_operation_cost(
 @app.post("/api/transcribe")
 def transcribe_video(
     req: TranscribeRequest,
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
 ):
     """
     Independent billable transcription flow.
     Consumes credits at TRANSCRIPTION rate (e.g. 1 credit/min).
     """
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # 1. Rate limiting
     allowed, _, retry_after = transcription_limiter.is_allowed(user_id, max_requests=5, window_seconds=60)
@@ -557,9 +587,12 @@ def transcribe_video(
 
 
 @app.get("/api/usage")
-def get_user_usage_summary(authorization: Optional[str] = Header(None)):
+def get_user_usage_summary(
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
     """Retrieve actual infrastructure usage metrics for authenticated user."""
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
     session = get_db_session()
     try:
         records = session.query(UsageRecord).filter_by(user_id=user_id).all()
@@ -591,13 +624,16 @@ def list_credit_packages():
 
 
 @app.get("/api/user/me")
-def get_current_user_profile(authorization: Optional[str] = Header(None)):
-    user_id = extract_user_id(authorization)
+def get_current_user_profile(
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    user_id = extract_user_id(authorization, x_device_id)
     subscription = SubscriptionService.get_user_subscription(user_id)
     balance = CreditService.get_balance(user_id)
     return {
         "user_id": user_id,
-        "is_authenticated": user_id != "guest_user",
+        "is_authenticated": user_id != "guest_user" and not user_id.startswith("guest_"),
         "plan": subscription["plan_name"],
         "monthly_credits": subscription["monthly_credits"],
         "balance": balance,
@@ -607,9 +643,12 @@ def get_current_user_profile(authorization: Optional[str] = Header(None)):
 
 
 @app.get("/api/clips")
-def get_saved_clips(authorization: Optional[str] = Header(None)):
+def get_saved_clips(
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
     """Retrieve saved clips isolated to the authenticated user within 24h retention window."""
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # 1. Check Supabase cloud DB first if configured
     if is_supabase_enabled():
@@ -644,9 +683,10 @@ def get_saved_clips(authorization: Optional[str] = Header(None)):
 def process_video(
     req: ProcessRequest,
     authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
 ):
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # 1. Rate limiting protection
     allowed, _, retry_after = ai_clipping_limiter.is_allowed(user_id, max_requests=5, window_seconds=60)
@@ -804,14 +844,15 @@ async def process_video_upload(
     video: UploadFile = File(...),
     count: int = Form(10),
     authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
 ):
     """
     AI Video Clipper endpoint for direct video file uploads.
-    Streams upload to disk, validates duration and safeguards, debits credits,
-    and runs the full AI clipping pipeline.
+    Streams upload to disk, enforces zero-trust magic byte & size validation,
+    probes duration and safeguards, debits credits, and runs clipping pipeline.
     """
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # 1. Rate limiting protection
     allowed, _, retry_after = ai_clipping_limiter.is_allowed(user_id, max_requests=5, window_seconds=60)
@@ -829,18 +870,33 @@ async def process_video_upload(
             detail="You already have an active clipping job in progress. Please wait for it to finish or check your live progress."
         )
 
-    # 3. Stream upload file to disk
+    # 3. Stream upload file to disk with 500MB size safeguard
     job_id = str(uuid.uuid4())
-    safe_filename = re.sub(r"[^\w\.-]", "_", video.filename or "uploaded_video.mp4")
+    safe_filename = sanitize_upload_filename(video.filename)
     upload_file_path = TEMP_DIR / f"{job_id}_{safe_filename}"
+    bytes_written = 0
+    max_size = 500 * 1024 * 1024  # 500MB
+
     try:
         with open(upload_file_path, "wb") as f:
             while chunk := await video.read(1024 * 1024):  # 1MB chunks
+                bytes_written += len(chunk)
+                if bytes_written > max_size:
+                    raise ValueError("File size limit exceeded: maximum allowed upload size is 500 MB.")
                 f.write(chunk)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload video: {str(e)}")
+        upload_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400 if "limit exceeded" in str(e) else 500, detail=f"Failed to upload video: {str(e)}")
 
-    # 4. Probe video metadata & enforce 35-minute duration cap
+    # 4. Zero-Trust Binary Magic Bytes and File Signature Validation
+    try:
+        validate_upload_size(upload_file_path, max_size_bytes=max_size)
+        validate_video_magic_bytes(upload_file_path)
+    except ValueError as val_err:
+        upload_file_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(val_err))
+
+    # 5. Probe video metadata & enforce 35-minute duration cap
     try:
         meta = probe_video_metadata(upload_file_path)
     except Exception as e:
@@ -968,10 +1024,24 @@ async def process_video_upload(
 
 
 @app.get("/api/status/{job_id}")
-def get_status(job_id: str, authorization: Optional[str] = Header(None)):
+def get_status(
+    job_id: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
     job = queue_manager.get_job(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
+
+    job_user = job.get("user_id")
+    if job_user and caller_id != "admin" and job_user != caller_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: You do not have permission to access this job."
+        )
     return job
 
 
@@ -1023,6 +1093,26 @@ def run_split_worker(job_id: str, video_file_path: Path, clip_duration: float, u
         job["zip_url"] = f"/api/split/download-all/{job_id}"
         job["current_message"] = f"Successfully generated {res['total_clips']} clips."
 
+        # Write persistent job manifest for recovery and ownership checks
+        manifest_data = {
+            "job_id": job_id,
+            "user_id": user_id,
+            "status": "completed",
+            "stage": "completed",
+            "progress_percent": 100,
+            "clips_created": res["total_clips"],
+            "total_clips": res["total_clips"],
+            "clip_duration": clip_duration,
+            "clips": res["clips"],
+            "zip_url": f"/api/split/download-all/{job_id}",
+            "created_at": job.get("created_at", time.time())
+        }
+        try:
+            with open(job_output_dir / "manifest.json", "w", encoding="utf-8") as mf:
+                json.dump(manifest_data, mf)
+        except Exception as mf_err:
+            print(f"[Splitter] Warning writing manifest: {mf_err}")
+
         # Record usage (0 credits consumed, purely tracking infrastructure utilization)
         try:
             db_s = get_db_session()
@@ -1055,18 +1145,42 @@ def run_split_worker(job_id: str, video_file_path: Path, clip_duration: float, u
             print(f"[Splitter] Warning: Failed to clean up temp source video: {err}")
 
 
+def get_and_authorize_split_job(job_id: str, caller_id: str) -> Dict[str, Any]:
+    """Retrieve split job with fallback to disk manifest and enforce user ownership."""
+    job = split_jobs.get(job_id)
+    if not job:
+        manifest_path = SPLIT_OUTPUT_DIR / job_id / "manifest.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, "r", encoding="utf-8") as f:
+                    job = json.load(f)
+            except Exception:
+                job = None
+    if not job:
+        raise HTTPException(status_code=404, detail="Split job not found.")
+
+    owner = job.get("user_id")
+    if owner and caller_id != "admin" and owner != caller_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied: You do not have permission to access this split job."
+        )
+    return job
+
+
 @app.post("/api/split")
 async def start_split_video(
     video: UploadFile = File(...),
     duration: float = Form(...),
-    authorization: Optional[str] = Header(None)
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
 ):
     """
     Independent Fixed-Duration Video Splitter endpoint.
     Uploads video and splits it sequentially into equal-length clips using FFmpeg.
-    Consumes 0 credits.
+    Enforces zero-trust file validation and strict user isolation.
     """
-    user_id = extract_user_id(authorization)
+    user_id = extract_user_id(authorization, x_device_id)
 
     # 1. Rate limiting protection
     allowed, _, retry_after = split_limiter.is_allowed(user_id, max_requests=10, window_seconds=60)
@@ -1083,16 +1197,30 @@ async def start_split_video(
         )
 
     job_id = str(uuid.uuid4())
-    safe_filename = re.sub(r"[^\w\.-]", "_", video.filename or "video.mp4")
+    safe_filename = sanitize_upload_filename(video.filename)
     temp_upload_path = SPLIT_TEMP_DIR / f"{job_id}_{safe_filename}"
+    bytes_written = 0
+    max_size = 500 * 1024 * 1024  # 500MB
 
-    # Stream write upload file to disk
+    # Stream write upload file to disk with 500MB size safeguard
     try:
         with open(temp_upload_path, "wb") as f:
             while chunk := await video.read(1024 * 1024):  # 1MB chunks
+                bytes_written += len(chunk)
+                if bytes_written > max_size:
+                    raise ValueError("File size limit exceeded: maximum allowed upload size is 500 MB.")
                 f.write(chunk)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to upload video: {str(e)}")
+        temp_upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400 if "limit exceeded" in str(e) else 500, detail=f"Failed to upload video: {str(e)}")
+
+    # Zero-Trust Binary Magic Bytes and File Signature Validation
+    try:
+        validate_upload_size(temp_upload_path, max_size_bytes=max_size)
+        validate_video_magic_bytes(temp_upload_path)
+    except ValueError as val_err:
+        temp_upload_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail=str(val_err))
 
     # Probe metadata
     try:
@@ -1143,17 +1271,30 @@ async def start_split_video(
 
 
 @app.get("/api/split/status/{job_id}")
-def get_split_status(job_id: str):
-    """Retrieve real-time progress and completed clips for a split job."""
-    job = split_jobs.get(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Split job not found.")
-    return job
+def get_split_status(
+    job_id: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    """Retrieve real-time progress and completed clips for a split job with strict ownership check."""
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
+    return get_and_authorize_split_job(job_id, caller_id)
 
 
 @app.get("/api/split/download-all/{job_id}")
-def download_all_clips_zip(job_id: str):
-    """Download all split clips packaged into a single ZIP file."""
+def download_all_clips_zip(
+    job_id: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    """Download all split clips packaged into a single ZIP file with strict caller authorization."""
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
+    get_and_authorize_split_job(job_id, caller_id)
+
     zip_path = SPLIT_OUTPUT_DIR / job_id / "split-clips.zip"
     if not zip_path.exists():
         raise HTTPException(status_code=404, detail="ZIP archive not found or still generating.")
@@ -1165,8 +1306,18 @@ def download_all_clips_zip(job_id: str):
 
 
 @app.get("/api/split/download/{job_id}/{clip_name}")
-def download_single_clip(job_id: str, clip_name: str):
-    """Download a single split clip."""
+def download_single_clip(
+    job_id: str,
+    clip_name: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    """Download a single split clip with strict caller authorization."""
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
+    get_and_authorize_split_job(job_id, caller_id)
+
     if not re.match(r"^clip_\d{3}\.mp4$", clip_name):
         raise HTTPException(status_code=400, detail="Invalid clip filename.")
     clip_path = SPLIT_OUTPUT_DIR / job_id / clip_name

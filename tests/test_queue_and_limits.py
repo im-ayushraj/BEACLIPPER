@@ -151,7 +151,7 @@ class TestWebAPIHardening(unittest.TestCase):
         mock_probe.return_value = {"duration": 120.0, "width": 1280, "height": 720}
         import io, uuid
         test_uid = f"user_upload_{uuid.uuid4().hex[:8]}"
-        dummy_video = io.BytesIO(b"fake video content for testing upload")
+        dummy_video = io.BytesIO(b"\x00\x00\x00\x20ftypisom" + (b"\x00" * 1024))
         dummy_video.name = "my_sample.mp4"
 
         with patch("web.verify_clerk_token", return_value={"sub": test_uid}):

@@ -14,6 +14,16 @@ export class ApiError extends Error {
   }
 }
 
+export function getClientDeviceId(): string {
+  if (typeof window === "undefined") return "server_rendered";
+  let id = localStorage.getItem("beaclipper_device_id");
+  if (!id) {
+    id = "dev_" + Math.random().toString(36).substring(2, 12) + Date.now().toString(36);
+    localStorage.setItem("beaclipper_device_id", id);
+  }
+  return id;
+}
+
 export async function processVideo(
   url: string,
   count: number = 10,
@@ -27,6 +37,7 @@ export async function processVideo(
   try {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
+      "X-Device-Id": getClientDeviceId(),
     };
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
@@ -68,6 +79,7 @@ export async function uploadAndProcessVideo(
 
     xhr.open("POST", targetUrl, true);
 
+    xhr.setRequestHeader("X-Device-Id", getClientDeviceId());
     if (token) {
       xhr.setRequestHeader("Authorization", `Bearer ${token}`);
     }
@@ -108,7 +120,9 @@ export async function uploadAndProcessVideo(
 
 export async function getJobStatus(jobId: string, token?: string | null): Promise<ProcessingJob> {
   try {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "X-Device-Id": getClientDeviceId(),
+    };
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
@@ -127,7 +141,9 @@ export async function getJobStatus(jobId: string, token?: string | null): Promis
 
 export async function getSavedClips(token?: string | null): Promise<{ clips: Clip[]; count: number }> {
   try {
-    const headers: Record<string, string> = {};
+    const headers: Record<string, string> = {
+      "X-Device-Id": getClientDeviceId(),
+    };
     if (token) {
       headers["Authorization"] = `Bearer ${token}`;
     }
