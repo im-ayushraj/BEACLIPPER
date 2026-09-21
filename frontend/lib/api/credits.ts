@@ -8,6 +8,7 @@ export interface CreditTransaction {
   id: number;
   amount: number;
   type: string;
+  source?: string;
   reference_id: string | null;
   metadata: Record<string, any>;
   created_at: string;

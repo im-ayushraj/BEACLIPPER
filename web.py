@@ -46,6 +46,9 @@ from clipper.storage import (
     get_user_clips_from_cloud,
     is_supabase_enabled,
     get_storage_provider,
+    s3_storage,
+    get_supabase_client,
+    STORAGE_BUCKET,
 )
 from clipper.db import (
     init_db,
@@ -804,10 +807,101 @@ def get_saved_clips(
     """Retrieve saved clips isolated to the authenticated user within 24h retention window."""
     user_id = extract_user_id(authorization, x_device_id)
 
-    # 1. Check Supabase cloud DB first if configured
+    # Candidate user IDs: exact user_id, plus guest device ID fallback if claiming guest work
+    target_ids = [user_id]
+    if x_device_id:
+        clean_dev = re.sub(r"[^\w\-]", "", x_device_id)[:48]
+        guest_id = f"guest_{clean_dev}"
+        if guest_id != user_id and guest_id not in target_ids:
+            target_ids.append(guest_id)
+
+    # 1. Primary Source of Truth: Query SQLAlchemy ClipModel records
+    session = get_db_session()
+    clips = []
+    try:
+        records = (
+            session.query(ClipModel)
+            .filter(ClipModel.user_id.in_(target_ids))
+            .order_by(ClipModel.created_at.desc())
+            .all()
+        )
+        for r in records:
+            signed_url = r.signed_url
+            storage_path = r.storage_path
+
+            # Dynamically refresh signed URL if storage path exists
+            if storage_path:
+                if s3_storage.is_configured():
+                    fresh_s3 = s3_storage.generate_presigned_download_url(
+                        storage_path, expires_in=86400, filename=r.file_name
+                    )
+                    if fresh_s3:
+                        signed_url = fresh_s3
+                elif is_supabase_enabled():
+                    try:
+                        s_client = get_supabase_client()
+                        if s_client:
+                            s_res = s_client.storage.from_(STORAGE_BUCKET).create_signed_url(
+                                storage_path, expires_in=86400
+                            )
+                            fresh_url = (
+                                s_res.get("signedURL")
+                                or s_res.get("signedUrl")
+                                or (s_res.get("data") or {}).get("signedUrl")
+                            )
+                            if fresh_url:
+                                signed_url = fresh_url
+                    except Exception as ref_err:
+                        print(f"[Storage] Warning refreshing signed url: {ref_err}")
+
+            # Fallback to local file path if signed_url still empty
+            if not signed_url:
+                local_u = OUTPUT_DIR / "users" / r.user_id / r.file_name
+                local_root = OUTPUT_DIR / r.file_name
+                if local_u.exists():
+                    signed_url = f"/output/users/{r.user_id}/{r.file_name}"
+                elif local_root.exists():
+                    signed_url = f"/output/{r.file_name}"
+
+            tags = []
+            if r.tags_json:
+                try:
+                    tags = json.loads(r.tags_json) if isinstance(r.tags_json, str) else r.tags_json
+                except Exception:
+                    tags = []
+
+            clips.append({
+                "id": r.id,
+                "job_id": r.job_id,
+                "file": r.file_name,
+                "title": r.title,
+                "duration": r.duration,
+                "score": r.score,
+                "tags": tags,
+                "explanation": r.explanation or "",
+                "reason": r.reason or "",
+                "start": r.start_time,
+                "end": r.end_time,
+                "url": signed_url,
+                "created_at": r.created_at.isoformat() if r.created_at else None
+            })
+    except Exception as dbe:
+        print(f"[DB] Error fetching clips from ClipModel: {dbe}")
+    finally:
+        session.close()
+
+    if clips:
+        return {
+            "clips": clips,
+            "count": len(clips),
+            "user_id": user_id,
+            "source": "database"
+        }
+
+    # 2. Check Supabase cloud DB if table clips exists and has records
     if is_supabase_enabled():
         cloud_clips = get_user_clips_from_cloud(user_id)
-        if cloud_clips is not None:
+        if cloud_clips:
             return {
                 "clips": cloud_clips,
                 "count": len(cloud_clips),
@@ -815,22 +909,25 @@ def get_saved_clips(
                 "source": "supabase"
             }
 
-    # 2. Otherwise read local isolated storage
-    user_clips_file = OUTPUT_DIR / "users" / user_id / "clips.json"
-    if not user_clips_file.exists():
-        return {"clips": [], "count": 0, "user_id": user_id, "source": "local"}
+    # 3. Fallback to local user clips.json file
+    for uid in target_ids:
+        user_clips_file = OUTPUT_DIR / "users" / uid / "clips.json"
+        if user_clips_file.exists():
+            try:
+                with open(user_clips_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                loaded = data.get("clips", [])
+                if loaded:
+                    return {
+                        "clips": loaded,
+                        "count": len(loaded),
+                        "user_id": user_id,
+                        "source": "local"
+                    }
+            except Exception as e:
+                print(f"[Storage] Error reading clips.json: {e}")
 
-    try:
-        with open(user_clips_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {
-            "clips": data.get("clips", []),
-            "count": len(data.get("clips", [])),
-            "user_id": user_id,
-            "source": "local"
-        }
-    except Exception as e:
-        return {"clips": [], "error": str(e), "user_id": user_id, "source": "local"}
+    return {"clips": [], "count": 0, "user_id": user_id, "source": "empty"}
 
 
 @app.post("/api/process")

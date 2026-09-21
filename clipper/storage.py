@@ -272,10 +272,40 @@ def save_clips_to_db(
     clips: List[Dict[str, Any]],
     video_info: Optional[Dict[str, Any]] = None
 ) -> bool:
-    """Records clipping job and clips metadata into Supabase PostgreSQL tables."""
+    """Records clipping job and clips metadata into both SQLAlchemy DB and Supabase PostgreSQL tables."""
+    # 1. Primary persistence: Save to SQLAlchemy ClipModel
+    try:
+        from clipper.db import get_db_session, ClipModel
+        s = get_db_session()
+        for c in clips:
+            file_name = c.get("file") or (os.path.basename(c.get("file_path", "")) if c.get("file_path") else "")
+            existing = s.query(ClipModel).filter_by(job_id=job_id, file_name=file_name).first()
+            if not existing:
+                clip_rec = ClipModel(
+                    job_id=job_id,
+                    user_id=user_id,
+                    file_name=file_name,
+                    title=c.get("title", ""),
+                    duration=float(c.get("duration", 0.0)),
+                    score=float(c.get("score", 8.0)),
+                    tags_json=json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else str(c.get("tags") or "[]"),
+                    explanation=c.get("explanation", ""),
+                    reason=c.get("reason", ""),
+                    start_time=float(c.get("start", 0.0)),
+                    end_time=float(c.get("end", 0.0)),
+                    storage_path=f"users/{user_id}/{file_name}",
+                    signed_url=c.get("download_url") or c.get("url") or c.get("signed_url")
+                )
+                s.add(clip_rec)
+        s.commit()
+        s.close()
+    except Exception as dbe:
+        print(f"[DB] Warning saving clips to ClipModel: {dbe}")
+
+    # 2. Secondary cloud sync to Supabase if configured
     client = get_supabase_client()
     if not client:
-        return False
+        return True
 
     try:
         # Insert job record
@@ -290,20 +320,21 @@ def save_clips_to_db(
         # Insert clips
         records = []
         for c in clips:
+            file_name = c.get("file") or (os.path.basename(c.get("file_path", "")) if c.get("file_path") else "")
             records.append({
                 "job_id": job_id,
                 "user_id": user_id,
-                "file_name": c.get("file", ""),
+                "file_name": file_name,
                 "title": c.get("title", ""),
                 "duration": c.get("duration", 0.0),
                 "score": c.get("score", 8.0),
-                "tags": json.dumps(c.get("tags", [])),
+                "tags": json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else str(c.get("tags") or "[]"),
                 "explanation": c.get("explanation", ""),
                 "reason": c.get("reason", ""),
                 "start_time": c.get("start", 0.0),
                 "end_time": c.get("end", 0.0),
-                "storage_path": f"users/{user_id}/{c.get('file', '')}",
-                "signed_url": c.get("url") or c.get("signed_url")
+                "storage_path": f"users/{user_id}/{file_name}",
+                "signed_url": c.get("download_url") or c.get("url") or c.get("signed_url")
             })
 
         if records:

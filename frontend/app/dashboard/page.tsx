@@ -18,7 +18,7 @@ import {
   UserUsageSummary,
 } from "@/lib/api/credits";
 import { ProcessingJob, Clip } from "@/types";
-import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, Cpu, CheckCircle2 } from "lucide-react";
+import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, CheckCircle2 } from "lucide-react";
 import { useAppAuth } from "@/components/AuthComponents";
 import { PricingModal } from "@/components/PricingModal";
 
@@ -355,13 +355,13 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* TAB 3: USAGE & REAL CREDIT BALANCE */}
+          {/* TAB 3: USAGE & CREDITS */}
           {currentTab === "usage" && (
             <div className="flex flex-col gap-6">
               <div>
-                <h2 className="text-2xl font-bold text-white tracking-tight">Usage & Credit Engine</h2>
+                <h2 className="text-2xl font-bold text-white tracking-tight">Usage & Credits</h2>
                 <p className="text-sm text-zinc-400 mt-1">
-                  Monitor your available credit balance, infrastructure metrics, and complete transaction audit history.
+                  Track your available balance, processing activity, and subscription plan.
                 </p>
               </div>
 
@@ -370,29 +370,29 @@ export default function DashboardPage() {
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
                   <div>
                     <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      <Zap className="h-3 w-3 fill-amber-400" /> Active Credit Engine
+                      <Zap className="h-3 w-3 fill-amber-400" /> Credit Balance
                     </span>
                     <h3 className="text-3xl font-extrabold text-white mt-2 flex items-baseline gap-2">
                       <span>{credits}</span>
                       <span className="text-sm font-normal text-zinc-400">Credits Available</span>
                     </h3>
                     <p className="text-xs sm:text-sm text-zinc-400 mt-1.5">
-                      AI Clipper: <strong>2.0 credits / min</strong> • Transcription: <strong>1.0 credit / min</strong> • Video Splitter: <strong className="text-emerald-400">0 credits (Free)</strong>
+                      AI Clipper: <strong>2 credits / min</strong> • Audio Transcription: <strong>1 credit / min</strong> • Video Splitter: <strong className="text-emerald-400">Free</strong>
                     </p>
                   </div>
                   <div className="rounded-xl border border-white/10 bg-[#07080b] p-4 text-center sm:text-right flex flex-col justify-center">
-                    <div className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">User Quota</div>
-                    <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">100 Starter Credits</div>
-                    <div className="text-[11px] text-zinc-400 mt-1">Granted automatically</div>
+                    <div className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">Starter Quota</div>
+                    <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">100 Free Credits</div>
+                    <div className="text-[11px] text-zinc-400 mt-1">Included on sign up</div>
                   </div>
                 </div>
               </div>
 
-              {/* Real Usage Metrics Grid */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              {/* Creator Usage Metrics Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
                   <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Film className="h-4 w-4 text-blue-400" /> Total Jobs
+                    <Film className="h-4 w-4 text-blue-400" /> Total Videos Processed
                   </div>
                   <div className="text-2xl font-bold font-mono text-white mt-2">
                     {usageSummary?.total_jobs ?? 0}
@@ -400,7 +400,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
                   <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Clock className="h-4 w-4 text-emerald-400" /> Processed Time
+                    <Clock className="h-4 w-4 text-emerald-400" /> Video Time Analyzed
                   </div>
                   <div className="text-2xl font-bold font-mono text-white mt-2">
                     {usageSummary?.total_duration_minutes ?? 0} <span className="text-xs text-zinc-500 font-normal">min</span>
@@ -408,27 +408,19 @@ export default function DashboardPage() {
                 </div>
                 <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
                   <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Sparkles className="h-4 w-4 text-purple-400" /> Clips Rendered
+                    <Sparkles className="h-4 w-4 text-purple-400" /> Clips Created
                   </div>
                   <div className="text-2xl font-bold font-mono text-white mt-2">
                     {usageSummary?.total_clips_generated ?? savedClips.length}
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
-                  <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Cpu className="h-4 w-4 text-amber-400" /> LLM Invocations
-                  </div>
-                  <div className="text-2xl font-bold font-mono text-white mt-2">
-                    {usageSummary?.total_llm_calls ?? 0}
-                  </div>
-                </div>
               </div>
 
-              {/* Transaction Audit Log */}
+              {/* Credit History Log */}
               <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6">
                 <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-base font-bold text-white">Credit Audit Trail</h4>
-                  <span className="text-xs text-zinc-500">Atomic ledger records</span>
+                  <h4 className="text-base font-bold text-white">Credit History</h4>
+                  <span className="text-xs text-zinc-500">Recent activity</span>
                 </div>
                 {transactions.length === 0 ? (
                   <div className="py-8 text-center text-xs text-zinc-500">
@@ -440,40 +432,64 @@ export default function DashboardPage() {
                       <thead>
                         <tr className="border-b border-white/[0.08] text-zinc-500 font-semibold">
                           <th className="pb-2">Date & Time</th>
+                          <th className="pb-2">Description</th>
                           <th className="pb-2">Type</th>
                           <th className="pb-2">Amount</th>
-                          <th className="pb-2">Job / Reference</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/[0.05]">
-                        {transactions.map((tx) => (
-                          <tr key={tx.id} className="text-zinc-300">
-                            <td className="py-2.5 text-zinc-400">
-                              {new Date(tx.created_at).toLocaleString()}
-                            </td>
-                            <td className="py-2.5">
-                              <span
-                                className={`inline-block px-2 py-0.5 rounded text-[10px] font-bold ${
-                                  tx.type === "PLAN_ALLOCATION"
-                                    ? "bg-emerald-500/20 text-emerald-300"
-                                    : tx.type === "REFUND"
-                                    ? "bg-blue-500/20 text-blue-300"
-                                    : "bg-zinc-800 text-zinc-300"
-                                }`}
-                              >
-                                {tx.type}
-                              </span>
-                            </td>
-                            <td className="py-2.5 font-mono font-semibold">
-                              <span className={tx.amount > 0 ? "text-emerald-400" : "text-zinc-200"}>
-                                {tx.amount > 0 ? `+${tx.amount}` : tx.amount}
-                              </span>
-                            </td>
-                            <td className="py-2.5 font-mono text-[11px] text-zinc-500">
-                              {tx.reference_id ? tx.reference_id.slice(0, 12) + "..." : "System"}
-                            </td>
-                          </tr>
-                        ))}
+                        {transactions.map((tx) => {
+                          const isDebit = tx.type === "DEBIT";
+                          const description =
+                            tx.metadata?.video_title
+                              ? tx.metadata.video_title.length > 35
+                                ? tx.metadata.video_title.slice(0, 35) + "..."
+                                : tx.metadata.video_title
+                              : tx.reference_id === "welcome_starter_grant" || tx.source === "WELCOME_BONUS"
+                              ? "Starter Bonus Credits"
+                              : tx.source === "AI_CLIPPER" || isDebit
+                              ? "AI Video Clipping"
+                              : tx.source === "TRANSCRIPTION"
+                              ? "Audio Transcription"
+                              : tx.source === "VIDEO_SPLITTER"
+                              ? "Video Splitting"
+                              : tx.source === "CREDIT_PURCHASE"
+                              ? "Credit Pack Top-up"
+                              : tx.source === "PLAN_ALLOCATION"
+                              ? "Monthly Plan Credits"
+                              : tx.source === "REFUND" || tx.type === "REFUND"
+                              ? "Processing Refund"
+                              : "Credit Adjustment";
+
+                          return (
+                            <tr key={tx.id} className="text-zinc-300">
+                              <td className="py-2.5 text-zinc-400">
+                                {new Date(tx.created_at).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 font-medium text-white">
+                                {description}
+                              </td>
+                              <td className="py-2.5">
+                                <span
+                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                    isDebit
+                                      ? "bg-white/5 text-zinc-300 border border-white/10"
+                                      : tx.type === "REFUND"
+                                      ? "bg-blue-500/15 text-blue-300 border border-blue-500/20"
+                                      : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
+                                  }`}
+                                >
+                                  {isDebit ? "Used" : tx.type === "REFUND" ? "Refund" : "Added"}
+                                </span>
+                              </td>
+                              <td className="py-2.5 font-mono font-medium">
+                                <span className={isDebit ? "text-zinc-300" : "text-emerald-400 font-semibold"}>
+                                  {isDebit ? `-${Math.abs(tx.amount)}` : `+${Math.abs(tx.amount)}`}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -512,7 +528,7 @@ export default function DashboardPage() {
                       </span>
                     </div>
                     <div className="text-3xl font-extrabold text-white">
-                      $15<span className="text-sm text-zinc-500 font-normal"> / mo</span>
+                      $19<span className="text-sm text-zinc-500 font-normal"> / mo</span>
                     </div>
                     <ul className="text-xs text-zinc-300 flex flex-col gap-2.5">
                       <li>✓ 600 Monthly Credits</li>
@@ -540,7 +556,7 @@ export default function DashboardPage() {
                     <ul className="text-xs text-zinc-400 flex flex-col gap-2.5">
                       <li>✓ 2,000 Monthly Credits</li>
                       <li>✓ Priority processing queue</li>
-                      <li>✓ Cloudflare R2 / S3 signed URLs</li>
+                      <li>✓ Instant high-speed cloud downloads</li>
                       <li>✓ 24/7 Priority support</li>
                     </ul>
                     <button
