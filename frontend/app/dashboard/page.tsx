@@ -9,7 +9,7 @@ import { ClipGrid } from "@/components/ClipGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MyClips } from "@/components/MyClips";
-import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips, deleteClip, getActiveJob, cancelJob } from "@/lib/api/client";
+import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips, deleteClip, getActiveJob, cancelJob, getJobStreamUrl } from "@/lib/api/client";
 import {
   getUserCredits,
   getCreditTransactions,
@@ -49,6 +49,7 @@ export default function DashboardPage() {
   const [isCanceling, setIsCanceling] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   const refreshCreditsAndUsage = async () => {
     try {
@@ -66,36 +67,85 @@ export default function DashboardPage() {
     }
   };
 
-  const startPolling = (jobId: string, token?: string | null) => {
+  const stopTracking = () => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  };
+
+  const handleJobUpdate = (jobData: ProcessingJob) => {
+    setCurrentJob(jobData);
+
+    if (jobData.status === "completed") {
+      stopTracking();
+      setIsProcessing(false);
+      const newClips = jobData.clips || [];
+      setGeneratedClips(newClips);
+      setSavedClips((prev) => {
+        const rest = prev.filter(
+          (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
+        );
+        return [...newClips, ...rest];
+      });
+      refreshCreditsAndUsage();
+    } else if (jobData.status === "error" || jobData.status === "canceled") {
+      stopTracking();
+      setIsProcessing(false);
+      setErrorMessage(jobData.error || "We couldn't finish processing this video.");
+      refreshCreditsAndUsage();
+    }
+  };
+
+  const startPollingFallback = (jobId: string, token?: string | null) => {
     if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
 
     pollIntervalRef.current = setInterval(async () => {
       try {
         const jobData = await getJobStatus(jobId, token);
-        setCurrentJob(jobData);
-
-        if (jobData.status === "completed") {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setIsProcessing(false);
-          const newClips = jobData.clips || [];
-          setGeneratedClips(newClips);
-          setSavedClips((prev) => {
-            const rest = prev.filter(
-              (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
-            );
-            return [...newClips, ...rest];
-          });
-          refreshCreditsAndUsage();
-        } else if (jobData.status === "error" || jobData.status === "canceled") {
-          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-          setIsProcessing(false);
-          setErrorMessage(jobData.error || "We couldn't finish processing this video.");
-          refreshCreditsAndUsage();
-        }
+        handleJobUpdate(jobData);
       } catch (pollErr: any) {
         console.error("Polling error", pollErr);
       }
     }, 1500);
+  };
+
+  const startLiveTracking = (jobId: string, token?: string | null) => {
+    stopTracking();
+
+    if (typeof window === "undefined" || !("EventSource" in window)) {
+      startPollingFallback(jobId, token);
+      return;
+    }
+
+    try {
+      const streamUrl = getJobStreamUrl(jobId, token);
+      const es = new EventSource(streamUrl);
+      eventSourceRef.current = es;
+
+      es.onmessage = (event) => {
+        try {
+          const jobData = JSON.parse(event.data);
+          handleJobUpdate(jobData);
+        } catch (parseErr) {
+          console.error("Failed to parse SSE event data:", parseErr);
+        }
+      };
+
+      es.onerror = (err) => {
+        console.warn("SSE connection interrupted or unsupported, falling back to polling:", err);
+        es.close();
+        eventSourceRef.current = null;
+        startPollingFallback(jobId, token);
+      };
+    } catch (e) {
+      console.warn("Failed to initialize EventSource, falling back to polling:", e);
+      startPollingFallback(jobId, token);
+    }
   };
 
   const handleCancelJob = async () => {
@@ -104,7 +154,7 @@ export default function DashboardPage() {
     try {
       const token = await getToken();
       await cancelJob(currentJob.job_id, token);
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      stopTracking();
       setCurrentJob(null);
       setIsProcessing(false);
       setErrorMessage(null);
@@ -145,7 +195,7 @@ export default function DashboardPage() {
           if (activeRes?.has_active_job && activeRes.job) {
             setCurrentJob(activeRes.job);
             setIsProcessing(true);
-            startPolling(activeRes.job.job_id, token);
+            startLiveTracking(activeRes.job.job_id, token);
           }
         } catch (activeErr) {
           console.warn("Active job check error:", activeErr);
@@ -189,9 +239,7 @@ export default function DashboardPage() {
     loadData();
 
     return () => {
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-      }
+      stopTracking();
     };
   }, [userId]);
 
@@ -221,8 +269,8 @@ export default function DashboardPage() {
       // Optimistically update or re-fetch credits
       refreshCreditsAndUsage();
 
-      // Start polling status
-      startPolling(jobId, token);
+      // Start live real-time SSE tracking
+      startLiveTracking(jobId, token);
     } catch (err: any) {
       const activeJobId = err.data?.job_id || err.data?.error?.job_id || err.data?.error?.active_job?.job_id;
       if (err.code === "ACTIVE_JOB_EXISTS" || err.status === 409 || err.message?.includes("active clipping job")) {
@@ -247,7 +295,7 @@ export default function DashboardPage() {
           };
           setCurrentJob(fallbackJob as any);
           setIsProcessing(true);
-          startPolling(targetId, token);
+          startLiveTracking(targetId, token);
           setErrorMessage(null);
           return;
         }
@@ -286,8 +334,8 @@ export default function DashboardPage() {
       // Optimistically update or re-fetch credits
       refreshCreditsAndUsage();
 
-      // Start polling status
-      startPolling(jobId, token);
+      // Start live real-time SSE tracking
+      startLiveTracking(jobId, token);
     } catch (err: any) {
       const activeJobId = err.data?.job_id || err.data?.error?.job_id || err.data?.error?.active_job?.job_id;
       if (err.code === "ACTIVE_JOB_EXISTS" || err.status === 409 || err.message?.includes("active clipping job")) {
@@ -312,7 +360,7 @@ export default function DashboardPage() {
           };
           setCurrentJob(fallbackJob as any);
           setIsProcessing(true);
-          startPolling(targetId, token);
+          startLiveTracking(targetId, token);
           setErrorMessage(null);
           return;
         }
@@ -331,6 +379,7 @@ export default function DashboardPage() {
   };
 
   const handleReset = () => {
+    stopTracking();
     setCurrentJob(null);
     setErrorMessage(null);
     setInsufficientCreditsError(null);

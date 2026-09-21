@@ -7,6 +7,7 @@ import base64
 import json
 import time
 import threading
+import asyncio
 import re
 from pathlib import Path
 from typing import Dict, Any, Optional
@@ -1625,6 +1626,47 @@ async def process_video_upload(
     }
 
 
+def resolve_job_data(job_id: str) -> Optional[Dict[str, Any]]:
+    """Resolves in-memory job data or queries database fallback."""
+    job = queue_manager.get_job(job_id)
+    if job:
+        return job
+
+    db_s = get_db_session()
+    try:
+        db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+        if db_job:
+            clips_recs = db_s.query(ClipModel).filter_by(job_id=job_id).all()
+            clips_list = []
+            for c in clips_recs:
+                clips_list.append({
+                    "file": c.file_name,
+                    "title": c.title,
+                    "duration": c.duration,
+                    "score": c.score,
+                    "tags": json.loads(c.tags_json) if c.tags_json else [],
+                    "explanation": c.explanation or "",
+                    "reason": c.reason or "",
+                    "start": c.start_time,
+                    "end": c.end_time,
+                    "url": c.signed_url or f"/output/{c.file_name}",
+                })
+            return {
+                "job_id": db_job.job_id,
+                "user_id": db_job.user_id,
+                "status": db_job.status,
+                "stage": db_job.stage or "completed",
+                "progress_percent": db_job.progress_percent,
+                "current_message": db_job.error if db_job.status == "error" else f"Successfully generated {len(clips_list)} clips.",
+                "clips": clips_list,
+                "credits_deducted": db_job.credits_deducted,
+                "error": db_job.error,
+            }
+    finally:
+        db_s.close()
+    return None
+
+
 @app.get("/api/status/{job_id}")
 def get_status(
     job_id: str,
@@ -1634,41 +1676,7 @@ def get_status(
     device_id: Optional[str] = None
 ):
     caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
-    job = queue_manager.get_job(job_id)
-    if not job:
-        # Fallback to persistent DB for completed/error jobs across server restarts
-        db_s = get_db_session()
-        try:
-            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-            if db_job:
-                clips_recs = db_s.query(ClipModel).filter_by(job_id=job_id).all()
-                clips_list = []
-                for c in clips_recs:
-                    clips_list.append({
-                        "file": c.file_name,
-                        "title": c.title,
-                        "duration": c.duration,
-                        "score": c.score,
-                        "tags": json.loads(c.tags_json) if c.tags_json else [],
-                        "explanation": c.explanation or "",
-                        "reason": c.reason or "",
-                        "start": c.start_time,
-                        "end": c.end_time,
-                        "url": c.signed_url or f"/output/{c.file_name}",
-                    })
-                job = {
-                    "job_id": db_job.job_id,
-                    "user_id": db_job.user_id,
-                    "status": db_job.status,
-                    "stage": db_job.stage or "completed",
-                    "progress_percent": db_job.progress_percent,
-                    "current_message": db_job.error if db_job.status == "error" else f"Successfully generated {len(clips_list)} clips.",
-                    "clips": clips_list,
-                    "credits_deducted": db_job.credits_deducted,
-                    "error": db_job.error,
-                }
-        finally:
-            db_s.close()
+    job = resolve_job_data(job_id)
 
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
@@ -1680,6 +1688,55 @@ def get_status(
             detail="Access denied: You do not have permission to access this job."
         )
     return job
+
+
+@app.get("/api/status/{job_id}/stream")
+async def stream_job_status(
+    job_id: str,
+    request: Request,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    """
+    Server-Sent Events (SSE) streaming endpoint for live real-time job progress.
+    Emits instant updates with 0 polling latency and zero client overhead.
+    """
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
+
+    async def event_generator():
+        for _ in range(600):  # 10 minutes maximum stream duration
+            if await request.is_disconnected():
+                break
+
+            job = resolve_job_data(job_id)
+            if not job:
+                yield f"event: error\ndata: {json.dumps({'error': 'Job not found'})}\n\n"
+                break
+
+            job_user = job.get("user_id")
+            if job_user and caller_id != "admin" and job_user != caller_id:
+                yield f"event: error\ndata: {json.dumps({'error': 'Access denied'})}\n\n"
+                break
+
+            status = job.get("status")
+            yield f"data: {json.dumps(job)}\n\n"
+
+            if status in ("completed", "error", "canceled"):
+                break
+
+            await asyncio.sleep(0.8)
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.get("/api/jobs/active")

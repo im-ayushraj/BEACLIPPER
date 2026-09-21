@@ -247,3 +247,13 @@ export async function cancelJob(
   return await res.json();
 }
 
+export function getJobStreamUrl(jobId: string, token?: string | null): string {
+  const deviceId = getClientDeviceId();
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  if (deviceId) params.set("device_id", deviceId);
+  const qs = params.toString();
+  return `${BASE_URL}/api/status/${encodeURIComponent(jobId)}/stream${qs ? `?${qs}` : ""}`;
+}
+
+
