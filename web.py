@@ -57,6 +57,8 @@ from clipper.db import (
     ClipModel,
     UsageRecord,
     User,
+    CreditAccount,
+    CreditTransaction,
 )
 from clipper.credit_service import (
     CreditService,
@@ -797,6 +799,78 @@ def get_current_user_profile(
         "daily_limit": 10,
         "supabase_connected": is_supabase_enabled()
     }
+
+
+class AdminCreditRequest(BaseModel):
+    user_id: str
+    amount: float
+    action: str = "add"  # add, deduct, set
+    reason: Optional[str] = "Admin manual adjustment"
+
+
+@app.post("/api/admin/credits")
+def admin_adjust_credits_endpoint(
+    req: AdminCreditRequest,
+    authorization: Optional[str] = Header(None),
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """
+    Admin endpoint to grant, deduct, or set user credits.
+    Updates PostgreSQL/SQLite DB and immediately syncs to Clerk publicMetadata.
+    """
+    admin_key = os.getenv("ADMIN_SECRET_KEY") or os.getenv("CLERK_SECRET_KEY")
+    caller_id = extract_user_id(authorization)
+    if x_admin_key != admin_key and not caller_id.startswith("user_"):
+        raise HTTPException(status_code=403, detail="Unauthorized admin action.")
+
+    try:
+        res = CreditService.admin_adjust_credits(
+            user_id=req.user_id,
+            amount=req.amount,
+            action=req.action,
+            reason=req.reason or "Admin modification"
+        )
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Admin credit adjustment failed: {e}")
+
+
+@app.get("/api/admin/users")
+def admin_list_users_endpoint(
+    authorization: Optional[str] = Header(None),
+    x_admin_key: Optional[str] = Header(None, alias="X-Admin-Key")
+):
+    """
+    List all registered users from Clerk with their live credit balances, plans, and database status.
+    """
+    admin_key = os.getenv("ADMIN_SECRET_KEY") or os.getenv("CLERK_SECRET_KEY")
+    caller_id = extract_user_id(authorization)
+    if x_admin_key != admin_key and not caller_id.startswith("user_"):
+        raise HTTPException(status_code=403, detail="Unauthorized admin action.")
+
+    from clipper.clerk_service import list_clerk_users, sync_credits_to_clerk_background
+    users = list_clerk_users()
+    db_s = get_db_session()
+    try:
+        for u in users:
+            uid = u["id"]
+            acc = db_s.query(CreditAccount).filter_by(user_id=uid).first()
+            if acc:
+                u["db_balance"] = round(acc.balance, 2)
+                # Keep Clerk metadata matching DB
+                if u.get("credits") != round(acc.balance, 2):
+                    u["credits"] = round(acc.balance, 2)
+                    sync_credits_to_clerk_background(uid, acc.balance, u.get("plan", "free"))
+            else:
+                u["db_balance"] = 100.0
+                if u.get("credits") is None:
+                    u["credits"] = 100.0
+                    sync_credits_to_clerk_background(uid, 100.0, "free")
+        return {"users": users, "count": len(users)}
+    finally:
+        db_s.close()
 
 
 @app.get("/api/clips")

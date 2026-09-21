@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import time
 from typing import Optional, Dict, Any, List
 from sqlalchemy.orm import Session
 
@@ -63,6 +64,13 @@ class CreditService:
                 )
                 session.add(tx)
                 session.commit()
+
+                # Sync starter credits to Clerk publicMetadata
+                try:
+                    from clipper.clerk_service import sync_credits_to_clerk_background
+                    sync_credits_to_clerk_background(user_id, cls.DEFAULT_STARTER_CREDITS, "free")
+                except Exception:
+                    pass
             
             # Refresh and expunge if closing own session
             if own_session:
@@ -75,12 +83,39 @@ class CreditService:
 
     @classmethod
     def get_balance(cls, user_id: str) -> float:
-        """Get current credit balance for user directly from database."""
+        """Get current credit balance for user directly from database with Clerk admin override sync."""
         session = get_db_session()
         try:
             account = session.query(CreditAccount).filter_by(user_id=user_id).first()
             if not account:
                 account = cls.get_or_create_account(user_id, session=session)
+
+            # Check Clerk publicMetadata for external admin override
+            if user_id and user_id.startswith("user_"):
+                try:
+                    from clipper.clerk_service import get_clerk_user_metadata
+                    meta = get_clerk_user_metadata(user_id)
+                    if meta and "credits" in meta:
+                        clerk_credits = round(float(meta["credits"]), 2)
+                        current_db = round(float(account.balance), 2)
+                        # If Clerk metadata has a different value, admin modified it in Clerk Dashboard!
+                        if current_db != clerk_credits:
+                            diff = clerk_credits - current_db
+                            account.balance = clerk_credits
+                            tx = CreditTransaction(
+                                user_id=user_id,
+                                type="CREDIT" if diff > 0 else "DEBIT",
+                                amount=abs(round(diff, 2)),
+                                balance_after=clerk_credits,
+                                source="CLERK_ADMIN_DASHBOARD",
+                                reference_id=f"clerk_override_{int(time.time())}",
+                                metadata_json=json.dumps({"reason": "Synchronized from Clerk Dashboard edit", "previous_balance": current_db})
+                            )
+                            session.add(tx)
+                            session.commit()
+                except Exception:
+                    pass
+
             return round(float(account.balance), 2)
         finally:
             session.close()
@@ -197,6 +232,13 @@ class CreditService:
             session.add(tx)
             session.commit()
 
+            # Sync to Clerk metadata
+            try:
+                from clipper.clerk_service import sync_credits_to_clerk_background
+                sync_credits_to_clerk_background(user_id, new_balance)
+            except Exception:
+                pass
+
             return {
                 "status": "debited",
                 "transaction_id": tx.id,
@@ -277,6 +319,13 @@ class CreditService:
             session.add(tx)
             session.commit()
 
+            # Sync to Clerk metadata
+            try:
+                from clipper.clerk_service import sync_credits_to_clerk_background
+                sync_credits_to_clerk_background(user_id, new_balance)
+            except Exception:
+                pass
+
             return {
                 "status": "refunded",
                 "transaction_id": tx.id,
@@ -325,6 +374,13 @@ class CreditService:
             session.add(tx)
             session.commit()
 
+            # Sync to Clerk metadata
+            try:
+                from clipper.clerk_service import sync_credits_to_clerk_background
+                sync_credits_to_clerk_background(user_id, new_balance)
+            except Exception:
+                pass
+
             return {
                 "status": "credited",
                 "transaction_id": tx.id,
@@ -368,5 +424,73 @@ class CreditService:
                     "created_at": t.created_at.isoformat() if t.created_at else None
                 })
             return results
+        finally:
+            session.close()
+
+    @classmethod
+    def admin_adjust_credits(
+        cls,
+        user_id: str,
+        amount: float,
+        action: str = "add",  # "add", "deduct", "set"
+        reason: str = "Admin manual adjustment"
+    ) -> Dict[str, Any]:
+        """Manually adjust credits for a user (Admin operation)."""
+        session = get_db_session()
+        try:
+            account = session.query(CreditAccount).filter_by(user_id=user_id).with_for_update().first()
+            if not account:
+                cls.get_or_create_account(user_id, session=session)
+                account = session.query(CreditAccount).filter_by(user_id=user_id).with_for_update().first()
+
+            old_balance = float(account.balance)
+            if action == "add":
+                new_balance = round(old_balance + float(amount), 2)
+                tx_type = "CREDIT"
+                tx_amount = float(amount)
+            elif action == "deduct":
+                new_balance = max(0.0, round(old_balance - float(amount), 2))
+                tx_type = "DEBIT"
+                tx_amount = float(amount)
+            elif action == "set":
+                new_balance = round(float(amount), 2)
+                diff = new_balance - old_balance
+                tx_type = "CREDIT" if diff >= 0 else "DEBIT"
+                tx_amount = abs(round(diff, 2))
+            else:
+                raise ValueError(f"Unknown action: {action}. Must be 'add', 'deduct', or 'set'.")
+
+            account.balance = new_balance
+
+            tx = CreditTransaction(
+                user_id=user_id,
+                type=tx_type,
+                amount=tx_amount,
+                balance_after=new_balance,
+                source="ADMIN_ADJUSTMENT",
+                reference_id=f"admin_{int(time.time())}",
+                metadata_json=json.dumps({"reason": reason, "previous_balance": old_balance})
+            )
+            session.add(tx)
+            session.commit()
+
+            # Sync to Clerk metadata
+            try:
+                from clipper.clerk_service import sync_credits_to_clerk_background
+                sync_credits_to_clerk_background(user_id, new_balance)
+            except Exception:
+                pass
+
+            return {
+                "user_id": user_id,
+                "previous_balance": old_balance,
+                "new_balance": new_balance,
+                "adjusted_by": tx_amount,
+                "action": action,
+                "reason": reason
+            }
+        except Exception:
+            session.rollback()
+            raise
         finally:
             session.close()
