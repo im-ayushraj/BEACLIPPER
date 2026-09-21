@@ -28,12 +28,31 @@ class TestWebAPI(unittest.TestCase):
         response = self.client.get("/api/status/non-existent-id")
         self.assertEqual(response.status_code, 404)
 
-    def test_output_static_mount(self):
-        """Test that generated clips in /output are accessible."""
-        response = self.client.get("/output/clips.json")
-        if response.status_code == 200:
-            data = response.json()
-            self.assertIn("clips", data)
+    def test_clips_download_all_not_found(self):
+        """Test bulk zip download for non-existent job returns 404."""
+        response = self.client.get("/api/clips/download-all/non-existent-job-id")
+        self.assertEqual(response.status_code, 404)
+
+    def test_package_clips_zip_helper(self):
+        """Test cutter package_clips_zip helper packages files into valid zip."""
+        import tempfile
+        from pathlib import Path
+        import zipfile
+        from clipper.cutter import package_clips_zip
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            p = Path(tmp_dir)
+            (p / "clip_01.mp4").write_text("dummy clip 1 content")
+            (p / "clip_02.mp4").write_text("dummy clip 2 content")
+            zip_out = p / "archive.zip"
+
+            package_clips_zip(p, zip_out)
+            self.assertTrue(zip_out.exists())
+
+            with zipfile.ZipFile(zip_out, "r") as zf:
+                namelist = zf.namelist()
+                self.assertIn("clip_01.mp4", namelist)
+                self.assertIn("clip_02.mp4", namelist)
 
 
 if __name__ == "__main__":

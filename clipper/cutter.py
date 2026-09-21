@@ -22,16 +22,56 @@ def cut_single_clip(
     start: float,
     duration: float,
     output_path: str,
-    ffmpeg_bin: str = "ffmpeg"
+    ffmpeg_bin: str = "ffmpeg",
+    aspect_ratio: str = "original",
+    normalize_audio: bool = True
 ) -> None:
     """
-    Cut a single clip using high-speed stream copy (25x-50x faster).
-    Automatically falls back to ultrafast re-encoding if stream copy fails
-    or produces an invalid file.
+    Cut a single clip. If aspect_ratio == "vertical_9_16", re-frames into 9:16
+    Shorts/Reels format with a stylish blurred background and normalized audio.
+    Otherwise uses lightning-fast zero-reencoding stream copy.
     """
     out_file = Path(output_path)
 
-    # 1. Attempt Fast Stream Copy: Zero re-encoding, pure packet copy (~0.1s - 0.3s)
+    # Mode 1: 9:16 Vertical Video with Blurred Background (Reels / TikTok / Shorts)
+    if aspect_ratio in ("vertical_9_16", "9:16", "vertical"):
+        filter_complex = (
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,boxblur=20:20[bg];"
+            "[0:v]scale=1080:1920:force_original_aspect_ratio=decrease[fg];"
+            "[bg][fg]overlay=(W-w)/2:(H-h)/2"
+        )
+        encode_cmd = [
+            ffmpeg_bin,
+            "-y",
+            "-ss", f"{max(0.0, float(start)):.3f}",
+            "-i", video_path,
+            "-t", f"{max(0.5, float(duration)):.3f}",
+            "-filter_complex", filter_complex,
+            "-c:v", "libx264",
+            "-preset", "veryfast",
+            "-crf", "22",
+            "-c:a", "aac",
+            "-b:a", "128k",
+            "-af", "loudnorm=I=-14:LRA=11:TP=-1.5" if normalize_audio else "anull",
+            "-avoid_negative_ts", "make_zero",
+            "-movflags", "+faststart",
+            output_path
+        ]
+        try:
+            res = subprocess.run(
+                encode_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+                timeout=180
+            )
+            if res.returncode == 0 and out_file.exists() and out_file.stat().st_size >= 500:
+                return
+        except subprocess.TimeoutExpired:
+            raise VideoCuttingError(f"FFmpeg timed out rendering 9:16 vertical clip at {output_path}")
+
+    # Mode 2: Original Aspect Ratio (16:9 / Landscape) Fast Stream Copy (~0.1s - 0.3s)
     copy_cmd = [
         ffmpeg_bin,
         "-y",
@@ -56,7 +96,7 @@ def cut_single_clip(
     except subprocess.TimeoutExpired:
         proc = None
 
-    # 2. Check if output exists and is valid; if not, fallback to ultrafast re-encoding
+    # Fallback to ultrafast re-encoding if stream copy fails
     if proc is None or proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
         if out_file.exists():
             try:
@@ -75,6 +115,7 @@ def cut_single_clip(
             "-crf", "23",
             "-c:a", "aac",
             "-b:a", "128k",
+            "-af", "loudnorm=I=-14:LRA=11:TP=-1.5" if normalize_audio else "anull",
             "-avoid_negative_ts", "make_zero",
             "-fflags", "+genpts",
             "-movflags", "+faststart",
@@ -104,11 +145,12 @@ def generate_clips(
     output_dir: str | Path,
     ffmpeg_bin: str | None = None,
     max_workers: Optional[int] = None,
-    progress_callback: Optional[Callable[[int, int], None]] = None
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    aspect_ratio: str = "original"
 ) -> Dict[str, Any]:
     """
     Cut all top clips concurrently using multi-threaded worker pool
-    and write output/clips.json.
+    and write output/clips.json. Supports aspect_ratio ('original' or 'vertical_9_16').
     """
     out_dir = Path(output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -158,7 +200,8 @@ def generate_clips(
             start=item["start"],
             duration=item["duration"],
             output_path=item["clip_filepath"],
-            ffmpeg_bin=bin_path
+            ffmpeg_bin=bin_path,
+            aspect_ratio=aspect_ratio
         )
         return item
 
@@ -193,3 +236,37 @@ def generate_clips(
         json.dump(result_json, f, indent=2)
 
     return result_json
+
+
+def package_clips_zip(
+    clips_dir: str | Path,
+    zip_path: str | Path,
+    clip_filenames: Optional[List[str]] = None
+) -> str:
+    """
+    Package clip video files into a zip archive with zero extra compression overhead (ZIP_STORED)
+    since MP4 containers are already compressed.
+    """
+    import zipfile
+    source_dir = Path(clips_dir)
+    dest_zip = Path(zip_path).resolve()
+    dest_zip.parent.mkdir(parents=True, exist_ok=True)
+
+    if dest_zip.exists():
+        try:
+            dest_zip.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    with zipfile.ZipFile(dest_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+        if clip_filenames:
+            for fname in clip_filenames:
+                fpath = source_dir / fname
+                if fpath.exists():
+                    zf.write(fpath, arcname=fname)
+        else:
+            for mp4 in sorted(source_dir.glob("clip_*.mp4")):
+                zf.write(mp4, arcname=mp4.name)
+
+    return str(dest_zip)
+

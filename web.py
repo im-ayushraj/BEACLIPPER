@@ -140,6 +140,7 @@ queue_manager.start_timeout_supervisor(check_interval_seconds=60, timeout_minute
 class ProcessRequest(BaseModel):
     url: str
     count: int = 10
+    aspect_ratio: Optional[str] = "original"
 
 
 def init_job_steps() -> Dict[str, Dict[str, Any]]:
@@ -215,7 +216,8 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             youtube_url=url if not source_file_path else None,
             source_video_path=source_file_path,
             target_clip_count=count,
-            status_callback=status_callback
+            status_callback=status_callback,
+            aspect_ratio=job.get("aspect_ratio", "original")
         )
         all_clips = result.get("clips", [])
 
@@ -1120,6 +1122,76 @@ def download_clip_file(
     raise HTTPException(status_code=404, detail="Clip file not found for download.")
 
 
+@app.get("/api/clips/download-all/{job_id}")
+def download_all_job_clips_zip(
+    job_id: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
+    token: Optional[str] = None,
+    device_id: Optional[str] = None
+):
+    """
+    Package all clips from an AI Clipper job into a single ZIP file
+    and trigger native download in browser with Content-Disposition: attachment.
+    """
+    caller_id = extract_user_id(authorization or (f"Bearer {token}" if token else None), x_device_id or device_id)
+
+    job = queue_manager.get_job(job_id)
+    clips_list = []
+    job_user_id = None
+
+    if job:
+        job_user_id = job.get("user_id")
+        clips_list = job.get("clips", [])
+    else:
+        db_s = get_db_session()
+        try:
+            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                job_user_id = db_job.user_id
+                clips_recs = db_s.query(ClipModel).filter_by(job_id=job_id).all()
+                clips_list = [{"file": c.file_name} for c in clips_recs]
+        finally:
+            db_s.close()
+
+    if not job_user_id:
+        raise HTTPException(status_code=404, detail="Clipping job not found.")
+
+    is_owner = bool(
+        caller_id == job_user_id or
+        (x_device_id and f"guest_{re.sub(r'[^\w\-]', '', x_device_id)[:48]}" == job_user_id) or
+        (device_id and f"guest_{re.sub(r'[^\w\-]', '', device_id)[:48]}" == job_user_id)
+    )
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="Unauthorized access to this job's clips.")
+
+    if not clips_list:
+        raise HTTPException(status_code=404, detail="No clips available for download.")
+
+    from clipper.cutter import package_clips_zip
+    zip_filename = f"viral_clips_{job_id[:8]}.zip"
+    zip_path = OUTPUT_DIR / "zips" / f"{job_id}.zip"
+    zip_path.parent.mkdir(parents=True, exist_ok=True)
+
+    filenames = [c.get("file") for c in clips_list if c.get("file")]
+
+    target_dir = OUTPUT_DIR / "users" / job_user_id
+    if not target_dir.exists() or not any((target_dir / fn).exists() for fn in filenames):
+        target_dir = OUTPUT_DIR
+
+    package_clips_zip(target_dir, zip_path, clip_filenames=filenames)
+
+    if not zip_path.exists() or zip_path.stat().st_size < 50:
+        raise HTTPException(status_code=500, detail="Failed to package clips archive.")
+
+    return FileResponse(
+        path=str(zip_path),
+        filename=zip_filename,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{zip_filename}"'}
+    )
+
+
 @app.delete("/api/clips/{clip_identifier}")
 def delete_clip_endpoint(
     clip_identifier: str,
@@ -1272,6 +1344,7 @@ def process_video(
         "user_email": extract_user_email(authorization),
         "url": safe_url,
         "count": req.count,
+        "aspect_ratio": req.aspect_ratio or "original",
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline...",
@@ -1342,6 +1415,7 @@ def process_video(
 async def process_video_upload(
     video: UploadFile = File(...),
     count: int = Form(10),
+    aspect_ratio: str = Form("original"),
     authorization: Optional[str] = Header(None),
     x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
@@ -1458,6 +1532,7 @@ async def process_video_upload(
         "user_email": extract_user_email(authorization),
         "url": f"uploaded://{safe_filename}",
         "count": count,
+        "aspect_ratio": aspect_ratio or "original",
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline on uploaded video...",

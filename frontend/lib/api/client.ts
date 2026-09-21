@@ -27,7 +27,8 @@ export function getClientDeviceId(): string {
 export async function processVideo(
   url: string,
   count: number = 10,
-  token?: string | null
+  token?: string | null,
+  aspectRatio: string = "original"
 ): Promise<{ job_id: string; status: string }> {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) {
@@ -46,7 +47,7 @@ export async function processVideo(
     const res = await fetch(`${BASE_URL}/api/process`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ url: trimmedUrl, count }),
+      body: JSON.stringify({ url: trimmedUrl, count, aspect_ratio: aspectRatio }),
     });
 
     if (!res.ok) {
@@ -67,12 +68,14 @@ export async function uploadAndProcessVideo(
   file: File,
   count: number = 10,
   token?: string | null,
-  onProgress?: (percent: number) => void
+  onProgress?: (percent: number) => void,
+  aspectRatio: string = "original"
 ): Promise<{ job_id: string; status: string }> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
     formData.append("video", file);
     formData.append("count", count.toString());
+    formData.append("aspect_ratio", aspectRatio);
 
     const xhr = new XMLHttpRequest();
     const targetUrl = `${BASE_URL}/api/process-upload`;
@@ -192,3 +195,13 @@ export async function getUsage(): Promise<UserUsage> {
     resetsIn: "14 hours",
   };
 }
+
+export function getClipsZipDownloadUrl(jobId: string, token?: string | null): string {
+  const deviceId = getClientDeviceId();
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  if (deviceId) params.set("device_id", deviceId);
+  const qs = params.toString();
+  return `${BASE_URL}/api/clips/download-all/${encodeURIComponent(jobId)}${qs ? `?${qs}` : ""}`;
+}
+

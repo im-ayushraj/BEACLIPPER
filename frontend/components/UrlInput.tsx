@@ -5,8 +5,8 @@ import { Sparkles, Loader2, Zap, Upload, Film, FileVideo, X, CheckCircle2 } from
 import { cn, formatTime } from "@/lib/utils";
 
 interface UrlInputProps {
-  onSubmit: (url: string, count: number) => void;
-  onUploadSubmit?: (file: File, count: number) => void;
+  onSubmit: (url: string, count: number, aspectRatio?: string) => void;
+  onUploadSubmit?: (file: File, count: number, aspectRatio?: string) => void;
   isLoading: boolean;
   uploadProgress?: number;
   disabled?: boolean;
@@ -22,6 +22,7 @@ export function UrlInput({
   const [activeTab, setActiveTab] = useState<"url" | "upload">("url");
   const [url, setUrl] = useState("");
   const [clipCount, setClipCount] = useState<number>(10);
+  const [aspectRatio, setAspectRatio] = useState<"original" | "vertical_9_16">("original");
   const [inputError, setInputError] = useState<string | null>(null);
 
   // Upload tab state
@@ -56,7 +57,7 @@ export function UrlInput({
     }
 
     setInputError(null);
-    onSubmit(cleanUrl, clipCount);
+    onSubmit(cleanUrl, clipCount, aspectRatio);
   };
 
   const handleFileSelect = (file: File) => {
@@ -119,7 +120,7 @@ export function UrlInput({
 
     setInputError(null);
     if (onUploadSubmit) {
-      onUploadSubmit(selectedFile, clipCount);
+      onUploadSubmit(selectedFile, clipCount, aspectRatio);
     }
   };
 
@@ -180,32 +181,67 @@ export function UrlInput({
         </div>
       </div>
 
-      {/* Target Clip Count Selector */}
-      <div className="flex items-center justify-between gap-4 mb-4 pb-3.5 border-b border-white/[0.06]">
-        <span className="text-xs text-zinc-400">Target clips:</span>
-        <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#0c0e12] p-0.5 text-xs">
-          <button
-            type="button"
-            onClick={() => setClipCount(5)}
-            disabled={disabled || isLoading}
-            className={cn(
-              "rounded px-2.5 py-1 font-medium transition",
-              clipCount === 5 ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"
-            )}
-          >
-            5 clips
-          </button>
-          <button
-            type="button"
-            onClick={() => setClipCount(10)}
-            disabled={disabled || isLoading}
-            className={cn(
-              "rounded px-2.5 py-1 font-medium transition",
-              clipCount === 10 ? "bg-white/10 text-white" : "text-zinc-400 hover:text-white"
-            )}
-          >
-            10 clips
-          </button>
+      {/* Target Clip Count & Format / Aspect Ratio Selectors */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3.5 border-b border-white/[0.06]">
+        {/* Target clips */}
+        <div className="flex items-center justify-between sm:justify-start gap-3">
+          <span className="text-xs text-zinc-400">Target clips:</span>
+          <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#0c0e12] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setClipCount(5)}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition",
+                clipCount === 5 ? "bg-white/10 text-white font-semibold" : "text-zinc-400 hover:text-white"
+              )}
+            >
+              5 clips
+            </button>
+            <button
+              type="button"
+              onClick={() => setClipCount(10)}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition",
+                clipCount === 10 ? "bg-white/10 text-white font-semibold" : "text-zinc-400 hover:text-white"
+              )}
+            >
+              10 clips
+            </button>
+          </div>
+        </div>
+
+        {/* Aspect Ratio / Format */}
+        <div className="flex items-center justify-between sm:justify-end gap-3">
+          <span className="text-xs text-zinc-400">Format:</span>
+          <div className="flex items-center gap-1 rounded-md border border-white/[0.08] bg-[#0c0e12] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setAspectRatio("original")}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition",
+                aspectRatio === "original" ? "bg-white/10 text-white font-semibold" : "text-zinc-400 hover:text-white"
+              )}
+            >
+              Landscape (16:9)
+            </button>
+            <button
+              type="button"
+              onClick={() => setAspectRatio("vertical_9_16")}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition flex items-center gap-1",
+                aspectRatio === "vertical_9_16"
+                  ? "bg-emerald-500/20 text-emerald-300 font-semibold border border-emerald-500/30"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Sparkles className="h-3 w-3 text-emerald-400" />
+              <span>Shorts / Reels (9:16)</span>
+            </button>
+          </div>
         </div>
       </div>
 

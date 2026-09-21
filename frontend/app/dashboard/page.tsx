@@ -138,14 +138,14 @@ export default function DashboardPage() {
     }
   }, [currentTab]);
 
-  const handleStartClipping = async (url: string, count: number) => {
+  const handleStartClipping = async (url: string, count: number, aspectRatio: string = "original") => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
     setIsProcessing(true);
 
     try {
       const token = await getToken();
-      const res = await processVideo(url, count, token);
+      const res = await processVideo(url, count, token, aspectRatio);
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits
@@ -195,7 +195,7 @@ export default function DashboardPage() {
     }
   };
 
-  const handleStartUploadClipping = async (file: File, count: number) => {
+  const handleStartUploadClipping = async (file: File, count: number, aspectRatio: string = "original") => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
     setIsProcessing(true);
@@ -205,7 +205,7 @@ export default function DashboardPage() {
       const token = await getToken();
       const res = await uploadAndProcessVideo(file, count, token, (pct) => {
         setUploadProgress(pct);
-      });
+      }, aspectRatio);
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits
@@ -381,6 +381,7 @@ export default function DashboardPage() {
                 <ClipGrid
                   clips={generatedClips}
                   videoTitle={currentJob?.video?.title}
+                  jobId={currentJob?.job_id}
                   onReset={handleReset}
                   onDeleteClip={handleDeleteClip}
                 />

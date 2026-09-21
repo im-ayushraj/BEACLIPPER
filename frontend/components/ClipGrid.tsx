@@ -3,17 +3,43 @@
 import { useState } from "react";
 import { Clip } from "@/types";
 import { ClipCard } from "./ClipCard";
-import { SlidersHorizontal, RefreshCw, CheckCircle2 } from "lucide-react";
+import { SlidersHorizontal, RefreshCw, CheckCircle2, Download, Loader2 } from "lucide-react";
+import { getClipsZipDownloadUrl } from "@/lib/api/client";
+import { useAppAuth } from "@/components/AuthComponents";
 
 interface ClipGridProps {
   clips: Clip[];
   videoTitle?: string;
+  jobId?: string;
   onReset: () => void;
   onDeleteClip?: (clip: Clip) => void;
 }
 
-export function ClipGrid({ clips, videoTitle, onReset, onDeleteClip }: ClipGridProps) {
+export function ClipGrid({ clips, videoTitle, jobId, onReset, onDeleteClip }: ClipGridProps) {
+  const { getToken } = useAppAuth();
   const [sortBy, setSortBy] = useState<"score" | "duration-desc" | "duration-asc">("score");
+  const [isDownloadingZip, setIsDownloadingZip] = useState(false);
+
+  const targetJobId = jobId || clips[0]?.job_id;
+
+  const handleDownloadZip = async () => {
+    if (!targetJobId || isDownloadingZip) return;
+    setIsDownloadingZip(true);
+    try {
+      const token = await getToken();
+      const zipUrl = getClipsZipDownloadUrl(targetJobId, token);
+      const link = document.createElement("a");
+      link.href = zipUrl;
+      link.setAttribute("download", `clips_${targetJobId.substring(0, 8)}.zip`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (e) {
+      console.error("Failed to trigger zip download:", e);
+    } finally {
+      setTimeout(() => setIsDownloadingZip(false), 2000);
+    }
+  };
 
   const sortedClips = [...clips].sort((a, b) => {
     if (sortBy === "score") {
@@ -44,7 +70,23 @@ export function ClipGrid({ clips, videoTitle, onReset, onDeleteClip }: ClipGridP
         </div>
 
         {/* Actions & Filters */}
-        <div className="flex items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-2.5">
+          {/* Download All as ZIP Button */}
+          {targetJobId && clips.length > 0 && (
+            <button
+              onClick={handleDownloadZip}
+              disabled={isDownloadingZip}
+              className="inline-flex items-center gap-1.5 rounded-lg bg-white px-3.5 py-1.5 text-xs font-semibold text-black transition hover:bg-zinc-200 cursor-pointer shadow-sm disabled:opacity-50"
+            >
+              {isDownloadingZip ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Download className="h-3.5 w-3.5" />
+              )}
+              <span>{isDownloadingZip ? "Preparing ZIP..." : `Download All (${clips.length})`}</span>
+            </button>
+          )}
+
           <div className="flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#111319] px-2.5 py-1.5 text-xs text-zinc-300">
             <SlidersHorizontal className="h-3 w-3 text-zinc-400" />
             <select

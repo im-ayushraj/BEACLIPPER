@@ -47,6 +47,7 @@ class ClipperPipeline:
         precomputed_transcript: Optional[List[Dict[str, Any]]] = None,
         url: Optional[str] = None,
         count: Optional[int] = None,
+        aspect_ratio: str = "original",
     ) -> Dict[str, Any]:
         """
         Execute the full pipeline for a YouTube URL or directly uploaded video file.
@@ -169,7 +170,8 @@ class ClipperPipeline:
             video_path=video_info["video_path"],
             clips_data=top_candidates,
             output_dir=self.output_dir,
-            progress_callback=lambda done, total: notify("clips", f"Cut {done}/{total} clips via fast stream copy...")
+            progress_callback=lambda done, total: notify("clips", f"Cut {done}/{total} clips via fast stream copy..."),
+            aspect_ratio=aspect_ratio
         )
         notify("clips_done", f"Generated {len(clips_result['clips'])} clips in {self.output_dir}.")
 
