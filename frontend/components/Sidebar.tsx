@@ -62,30 +62,30 @@ export function Sidebar({
 
       <aside
         className={cn(
-          "fixed top-0 bottom-0 left-0 z-50 flex w-64 flex-col border-r border-white/[0.08] bg-[#0c0e14] transition-transform duration-200 ease-in-out md:translate-x-0",
+          "fixed top-0 bottom-0 left-0 z-50 flex w-60 flex-col border-r border-white/[0.08] bg-[#0c0e12] transition-transform duration-200 ease-in-out md:translate-x-0",
           mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
         )}
       >
         {/* Sidebar Header */}
-        <div className="flex h-16 items-center justify-between border-b border-white/[0.08] px-5">
-          <Link href="/" className="flex items-center gap-2.5">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-white text-black font-black">
-              <Scissors className="h-3.5 w-3.5 stroke-[2.5]" />
+        <div className="flex h-14 items-center justify-between border-b border-white/[0.08] px-4">
+          <Link href="/" className="flex items-center gap-2">
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-white text-black font-semibold text-xs">
+              <Scissors className="h-3 w-3 stroke-[2.2]" />
             </div>
-            <span className="font-bold text-white tracking-tight">Clipper</span>
+            <span className="font-semibold text-sm text-white tracking-tight">Clipper</span>
           </Link>
 
           <Link
             href="/"
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-zinc-400 hover:bg-white/5 hover:text-white transition"
+            className="flex h-7 w-7 items-center justify-center rounded text-zinc-500 hover:text-white transition"
             title="Back to home"
           >
-            <ArrowLeft className="h-4 w-4" />
+            <ArrowLeft className="h-3.5 w-3.5" />
           </Link>
         </div>
 
         {/* Navigation Items */}
-        <div className="flex flex-1 flex-col gap-1.5 p-3">
+        <div className="flex flex-1 flex-col gap-1 p-2.5">
           {navItems.map((item) => {
             const Icon = item.icon;
             const active = currentTab === item.id;
@@ -97,19 +97,19 @@ export function Sidebar({
                   if (onCloseMobile) onCloseMobile();
                 }}
                 className={cn(
-                  "flex w-full items-center gap-3 rounded-lg px-3.5 py-2.5 text-sm font-medium transition",
+                  "flex w-full items-center gap-2.5 rounded-md px-3 py-2 text-xs font-medium transition",
                   active
-                    ? "bg-white/[0.08] text-white font-semibold"
-                    : "text-zinc-400 hover:bg-white/[0.04] hover:text-zinc-200"
+                    ? "bg-white/[0.07] text-white font-semibold"
+                    : "text-zinc-400 hover:bg-white/[0.03] hover:text-zinc-200"
                 )}
               >
-                <Icon className={cn("h-4 w-4", active ? "text-white" : "text-zinc-400")} />
+                <Icon className={cn("h-3.5 w-3.5", active ? "text-white" : "text-zinc-500")} />
                 <span>{item.label}</span>
                 {item.badge && (
                   <span
                     className={cn(
-                      "ml-auto rounded-full px-2 py-0.5 text-[10px] font-semibold",
-                      active ? "bg-white/20 text-white" : "bg-white/5 text-zinc-400"
+                      "ml-auto rounded px-1.5 py-0.2 font-mono text-[10px]",
+                      active ? "bg-white/20 text-white" : "bg-white/5 text-zinc-500"
                     )}
                   >
                     {item.badge}
@@ -120,17 +120,12 @@ export function Sidebar({
           })}
         </div>
 
-        {/* Subscription / Plan Quick Info */}
+        {/* Account Usage Box */}
         <div className="p-3 border-t border-white/[0.08]">
-          <div className="rounded-xl border border-white/[0.08] bg-[#11141c] p-3.5 flex flex-col gap-2.5">
+          <div className="rounded-lg border border-white/[0.08] bg-[#101217] p-3 flex flex-col gap-2">
             <div className="flex items-center justify-between text-xs">
-              <span className="font-semibold text-white">Credit Balance</span>
-              <span className="font-bold text-amber-400">{credits} Credits</span>
-            </div>
-
-            <div className="flex items-center justify-between text-[11px] text-zinc-400">
-              <span>{clipsCount} {clipsCount === 1 ? "clip" : "clips"} in library</span>
-              <span className="font-medium text-emerald-400">Active</span>
+              <span className="text-zinc-400 font-medium">Credits</span>
+              <span className="font-mono font-semibold text-white">{credits}</span>
             </div>
 
             <button
@@ -142,10 +137,10 @@ export function Sidebar({
                 }
                 if (onCloseMobile) onCloseMobile();
               }}
-              className="mt-1 flex items-center justify-center gap-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 py-1.5 text-xs font-semibold text-blue-300 transition hover:bg-blue-600/30 hover:text-white cursor-pointer"
+              className="mt-1 flex items-center justify-center gap-1.5 rounded-md border border-white/[0.08] bg-white/[0.03] py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.08] hover:text-white cursor-pointer"
             >
-              <span>Get Credits / Upgrade</span>
-              <ArrowUpRight className="h-3 w-3" />
+              <span>Upgrade / Top-up</span>
+              <ArrowUpRight className="h-3 w-3 text-zinc-500" />
             </button>
           </div>
         </div>

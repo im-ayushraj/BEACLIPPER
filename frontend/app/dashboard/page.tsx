@@ -18,7 +18,7 @@ import {
   UserUsageSummary,
 } from "@/lib/api/credits";
 import { ProcessingJob, Clip } from "@/types";
-import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, CheckCircle2 } from "lucide-react";
+import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, Video, CheckCircle2 } from "lucide-react";
 import { useAppAuth } from "@/components/AuthComponents";
 import { PricingModal } from "@/components/PricingModal";
 
@@ -230,7 +230,7 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="flex min-h-screen bg-[#090a0f] text-white">
+    <div className="flex min-h-screen bg-[#090a0e] text-white">
       {/* Sidebar */}
       <Sidebar
         currentTab={currentTab}
@@ -246,7 +246,7 @@ export default function DashboardPage() {
       />
 
       {/* Main Container */}
-      <div className="flex-1 md:ml-64 flex flex-col min-h-screen">
+      <div className="flex-1 md:ml-60 flex flex-col min-h-screen">
         <DashboardHeader
           onOpenMobileMenu={() => setMobileSidebarOpen(true)}
           clipsCount={savedClips.length}
@@ -257,17 +257,17 @@ export default function DashboardPage() {
           }}
         />
 
-        <main className="flex-1 p-4 sm:p-8 max-w-6xl w-full mx-auto flex flex-col gap-8">
+        <main className="flex-1 p-4 sm:p-6 max-w-5xl w-full mx-auto flex flex-col gap-6">
           {/* Payment Status Banner */}
           {paymentBanner && (
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-4 flex items-center justify-between gap-3 text-emerald-300">
-              <div className="flex items-center gap-2.5 text-sm font-medium">
-                <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0" />
+            <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/10 p-3.5 flex items-center justify-between gap-3 text-emerald-300">
+              <div className="flex items-center gap-2 text-xs font-medium">
+                <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span>{paymentBanner}</span>
               </div>
               <button
                 onClick={() => setPaymentBanner(null)}
-                className="text-xs text-emerald-400/80 hover:text-emerald-300 font-semibold"
+                className="text-xs text-emerald-400/80 hover:text-emerald-300 font-medium"
               >
                 Dismiss
               </button>
@@ -276,7 +276,7 @@ export default function DashboardPage() {
 
           {/* TAB 1: CLIP STUDIO */}
           {currentTab === "studio" && (
-            <div className="flex flex-col gap-8">
+            <div className="flex flex-col gap-6">
               {/* URL & Upload Input Form */}
               <UrlInput
                 onSubmit={handleStartClipping}
@@ -288,12 +288,12 @@ export default function DashboardPage() {
 
               {/* Insufficient Credits Banner */}
               {insufficientCreditsError && (
-                <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <AlertCircle className="h-5 w-5 text-amber-400 shrink-0 mt-0.5" />
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-start gap-2.5">
+                    <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                     <div>
-                      <h4 className="text-sm font-bold text-amber-300">Insufficient Credits</h4>
-                      <p className="text-xs text-zinc-300 mt-1">
+                      <h4 className="text-xs font-semibold text-amber-300">Insufficient Credits</h4>
+                      <p className="text-xs text-zinc-400 mt-0.5">
                         {insufficientCreditsError.message ||
                           `You need ${insufficientCreditsError.required} credits for this video, but only have ${insufficientCreditsError.available} credits.`}
                       </p>
@@ -304,10 +304,10 @@ export default function DashboardPage() {
                       setPricingModalTab("credits");
                       setPricingModalOpen(true);
                     }}
-                    className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-amber-400 px-4 py-2 text-xs font-bold text-black transition hover:bg-amber-300 shrink-0 cursor-pointer"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white px-3.5 py-1.5 text-xs font-semibold text-black transition hover:bg-zinc-200 shrink-0 cursor-pointer"
                   >
-                    <span>Get More Credits</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
+                    <span>Get credits</span>
+                    <ArrowUpRight className="h-3 w-3" />
                   </button>
                 </div>
               )}
@@ -357,87 +357,90 @@ export default function DashboardPage() {
 
           {/* TAB 3: USAGE & CREDITS */}
           {currentTab === "usage" && (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               <div>
-                <h2 className="text-2xl font-bold text-white tracking-tight">Usage & Credits</h2>
-                <p className="text-sm text-zinc-400 mt-1">
-                  Track your available balance, processing activity, and subscription plan.
+                <h2 className="text-xl font-semibold text-white tracking-tight">Usage & Credits</h2>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Account balance, processing activity, and subscription management.
                 </p>
               </div>
 
               {/* Current Credit Balance Card */}
-              <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 sm:p-8">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+              <div className="rounded-xl border border-white/[0.08] bg-[#111319] p-5 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div>
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                      <Zap className="h-3 w-3 fill-amber-400" /> Credit Balance
+                    <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                      Available Balance
                     </span>
-                    <h3 className="text-3xl font-extrabold text-white mt-2 flex items-baseline gap-2">
-                      <span>{credits}</span>
-                      <span className="text-sm font-normal text-zinc-400">Credits Available</span>
+                    <h3 className="text-2xl sm:text-3xl font-bold text-white mt-1 flex items-baseline gap-2">
+                      <span className="font-mono">{credits}</span>
+                      <span className="text-xs font-normal text-zinc-400">credits</span>
                     </h3>
-                    <p className="text-xs sm:text-sm text-zinc-400 mt-1.5">
-                      AI Clipper: <strong>2 credits / min</strong> • Audio Transcription: <strong>1 credit / min</strong> • Video Splitter: <strong className="text-emerald-400">Free</strong>
+                    <p className="text-xs text-zinc-400 mt-1">
+                      AI Clipper: 2 credits / min &bull; Transcription: 1 credit / min &bull; Video Splitter: Free
                     </p>
                   </div>
-                  <div className="rounded-xl border border-white/10 bg-[#07080b] p-4 text-center sm:text-right flex flex-col justify-center">
-                    <div className="text-xs uppercase tracking-wider text-zinc-500 font-semibold">Starter Quota</div>
-                    <div className="text-lg font-bold font-mono text-emerald-400 mt-0.5">100 Free Credits</div>
-                    <div className="text-[11px] text-zinc-400 mt-1">Included on sign up</div>
+                  <div className="rounded-lg border border-white/[0.08] bg-[#0c0e12] p-3 text-center sm:text-right flex flex-col justify-center">
+                    <div className="text-[11px] text-zinc-500 font-medium">Starter Allocation</div>
+                    <div className="text-sm font-semibold font-mono text-white mt-0.5">100 Free Credits</div>
+                    <div className="text-[10px] text-zinc-500 mt-0.5">Granted on sign up</div>
                   </div>
                 </div>
               </div>
 
               {/* Creator Usage Metrics Grid */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
-                  <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Film className="h-4 w-4 text-blue-400" /> Total Videos Processed
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
+                <div className="rounded-lg border border-white/[0.08] bg-[#111319] p-4">
+                  <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
+                    <Film className="h-3.5 w-3.5 text-zinc-500" />
+                    <span>Videos Processed</span>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white mt-2">
+                  <div className="text-xl font-semibold font-mono text-white mt-1.5">
                     {usageSummary?.total_jobs ?? 0}
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
-                  <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Clock className="h-4 w-4 text-emerald-400" /> Video Time Analyzed
+                <div className="rounded-lg border border-white/[0.08] bg-[#111319] p-4">
+                  <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
+                    <Clock className="h-3.5 w-3.5 text-zinc-500" />
+                    <span>Duration Analyzed</span>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white mt-2">
+                  <div className="text-xl font-semibold font-mono text-white mt-1.5">
                     {usageSummary?.total_duration_minutes ?? 0} <span className="text-xs text-zinc-500 font-normal">min</span>
                   </div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-[#11141d] p-4">
-                  <div className="flex items-center gap-2 text-zinc-400 text-xs">
-                    <Sparkles className="h-4 w-4 text-purple-400" /> Clips Created
+                <div className="rounded-lg border border-white/[0.08] bg-[#111319] p-4">
+                  <div className="flex items-center gap-1.5 text-zinc-400 text-xs">
+                    <Video className="h-3.5 w-3.5 text-zinc-500" />
+                    <span>Clips Generated</span>
                   </div>
-                  <div className="text-2xl font-bold font-mono text-white mt-2">
+                  <div className="text-xl font-semibold font-mono text-white mt-1.5">
                     {usageSummary?.total_clips_generated ?? savedClips.length}
                   </div>
                 </div>
               </div>
 
               {/* Credit History Log */}
-              <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <h4 className="text-base font-bold text-white">Credit History</h4>
-                  <span className="text-xs text-zinc-500">Recent activity</span>
+              <div className="rounded-xl border border-white/[0.08] bg-[#111319] p-5">
+                <div className="flex items-center justify-between mb-3.5">
+                  <h4 className="text-sm font-semibold text-white">Credit History</h4>
+                  <span className="text-xs text-zinc-500 font-mono">Recent activity</span>
                 </div>
                 {transactions.length === 0 ? (
-                  <div className="py-8 text-center text-xs text-zinc-500">
+                  <div className="py-6 text-center text-xs text-zinc-500">
                     No transactions recorded yet.
                   </div>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-left text-xs">
                       <thead>
-                        <tr className="border-b border-white/[0.08] text-zinc-500 font-semibold">
-                          <th className="pb-2">Date & Time</th>
-                          <th className="pb-2">Description</th>
-                          <th className="pb-2">Type</th>
-                          <th className="pb-2">Amount</th>
+                        <tr className="border-b border-white/[0.06] text-zinc-500 font-medium">
+                          <th className="pb-2 font-normal">Date</th>
+                          <th className="pb-2 font-normal">Description</th>
+                          <th className="pb-2 font-normal">Type</th>
+                          <th className="pb-2 font-normal text-right">Amount</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/[0.05]">
+                      <tbody className="divide-y divide-white/[0.04]">
                         {transactions.map((tx) => {
                           const isDebit = tx.type === "DEBIT";
                           const description =
@@ -463,27 +466,27 @@ export default function DashboardPage() {
 
                           return (
                             <tr key={tx.id} className="text-zinc-300">
-                              <td className="py-2.5 text-zinc-400">
-                                {new Date(tx.created_at).toLocaleString()}
+                              <td className="py-2.5 text-zinc-500 font-mono text-[11px]">
+                                {new Date(tx.created_at).toLocaleDateString()}
                               </td>
-                              <td className="py-2.5 font-medium text-white">
+                              <td className="py-2.5 text-white">
                                 {description}
                               </td>
                               <td className="py-2.5">
                                 <span
-                                  className={`inline-block px-2 py-0.5 rounded text-[10px] font-semibold ${
+                                  className={`inline-block px-1.5 py-0.2 rounded font-mono text-[10px] ${
                                     isDebit
-                                      ? "bg-white/5 text-zinc-300 border border-white/10"
+                                      ? "text-zinc-400 bg-white/[0.04]"
                                       : tx.type === "REFUND"
-                                      ? "bg-blue-500/15 text-blue-300 border border-blue-500/20"
-                                      : "bg-emerald-500/15 text-emerald-300 border border-emerald-500/20"
+                                      ? "text-blue-400 bg-blue-500/10"
+                                      : "text-emerald-400 bg-emerald-500/10"
                                   }`}
                                 >
-                                  {isDebit ? "Used" : tx.type === "REFUND" ? "Refund" : "Added"}
+                                  {isDebit ? "Debit" : tx.type === "REFUND" ? "Refund" : "Credit"}
                                 </span>
                               </td>
-                              <td className="py-2.5 font-mono font-medium">
-                                <span className={isDebit ? "text-zinc-300" : "text-emerald-400 font-semibold"}>
+                              <td className="py-2.5 font-mono text-right">
+                                <span className={isDebit ? "text-zinc-400" : "text-emerald-400"}>
                                   {isDebit ? `-${Math.abs(tx.amount)}` : `+${Math.abs(tx.amount)}`}
                                 </span>
                               </td>
@@ -497,74 +500,72 @@ export default function DashboardPage() {
               </div>
 
               {/* Plans Comparison */}
-              <div>
-                <h4 className="text-lg font-bold text-white mb-3">Subscription Plans</h4>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="pt-2">
+                <h4 className="text-sm font-semibold text-white mb-3">Subscription Plans</h4>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   {/* Free */}
-                  <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 flex flex-col gap-4">
+                  <div className="rounded-lg border border-white/[0.08] bg-[#111319] p-4 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-white">Free Starter</span>
-                      <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] text-zinc-300">Active</span>
+                      <span className="text-xs font-semibold text-white">Free Starter</span>
+                      <span className="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] text-zinc-400">Current</span>
                     </div>
-                    <div className="text-3xl font-extrabold text-white">
-                      $0<span className="text-sm text-zinc-500 font-normal"> / mo</span>
+                    <div className="text-xl font-bold text-white">
+                      $0<span className="text-xs text-zinc-500 font-normal"> / mo</span>
                     </div>
-                    <ul className="text-xs text-zinc-400 flex flex-col gap-2.5">
-                      <li>✓ 100 Starter Credits included</li>
-                      <li>✓ Max 35 min video duration</li>
-                      <li>✓ Full AI transcript & scene ranking</li>
-                      <li>✓ Zero-credit video splitter</li>
+                    <ul className="text-xs text-zinc-400 flex flex-col gap-2">
+                      <li>&bull; 100 Starter Credits</li>
+                      <li>&bull; Max 35 min video duration</li>
+                      <li>&bull; AI hook & scene detection</li>
+                      <li>&bull; Free video splitter</li>
                     </ul>
                   </div>
 
                   {/* Creator */}
-                  <div className="rounded-2xl border border-blue-500/40 bg-blue-500/[0.04] p-6 flex flex-col gap-4 shadow-lg shadow-blue-500/5">
+                  <div className="rounded-lg border border-blue-500/30 bg-[#111319] p-4 flex flex-col gap-3">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-white flex items-center gap-1.5">
-                        <Sparkles className="h-4 w-4 text-blue-400" /> Creator
-                      </span>
-                      <span className="rounded-full bg-blue-500/20 text-blue-400 px-2 py-0.5 text-[10px] font-bold">
+                      <span className="text-xs font-semibold text-white">Creator</span>
+                      <span className="rounded bg-blue-500/20 text-blue-300 px-1.5 py-0.5 text-[10px] font-medium">
                         Popular
                       </span>
                     </div>
-                    <div className="text-3xl font-extrabold text-white">
-                      $19<span className="text-sm text-zinc-500 font-normal"> / mo</span>
+                    <div className="text-xl font-bold text-white">
+                      $19<span className="text-xs text-zinc-500 font-normal"> / mo</span>
                     </div>
-                    <ul className="text-xs text-zinc-300 flex flex-col gap-2.5">
-                      <li>✓ 600 Monthly Credits</li>
-                      <li>✓ Priority processing queue</li>
-                      <li>✓ 1080p high bitrate rendering</li>
-                      <li>✓ Subtitle style customization</li>
+                    <ul className="text-xs text-zinc-300 flex flex-col gap-2">
+                      <li>&bull; 600 Monthly Credits</li>
+                      <li>&bull; Priority processing queue</li>
+                      <li>&bull; Videos up to 60 min</li>
+                      <li>&bull; Subtitle styling</li>
                     </ul>
                     <button
                       onClick={() => {
                         setPricingModalTab("plans");
                         setPricingModalOpen(true);
                       }}
-                      className="mt-auto w-full rounded-xl bg-white py-2.5 text-xs font-bold text-black transition hover:bg-zinc-200 cursor-pointer shadow"
+                      className="mt-auto w-full rounded-md bg-white py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 cursor-pointer"
                     >
                       Subscribe ($19/mo)
                     </button>
                   </div>
 
                   {/* Pro */}
-                  <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 flex flex-col gap-4">
-                    <span className="font-bold text-white">Pro Studio</span>
-                    <div className="text-3xl font-extrabold text-white">
-                      $49<span className="text-sm text-zinc-500 font-normal"> / mo</span>
+                  <div className="rounded-lg border border-white/[0.08] bg-[#111319] p-4 flex flex-col gap-3">
+                    <span className="text-xs font-semibold text-white">Pro Studio</span>
+                    <div className="text-xl font-bold text-white">
+                      $49<span className="text-xs text-zinc-500 font-normal"> / mo</span>
                     </div>
-                    <ul className="text-xs text-zinc-400 flex flex-col gap-2.5">
-                      <li>✓ 2,000 Monthly Credits</li>
-                      <li>✓ Priority processing queue</li>
-                      <li>✓ Instant high-speed cloud downloads</li>
-                      <li>✓ 24/7 Priority support</li>
+                    <ul className="text-xs text-zinc-400 flex flex-col gap-2">
+                      <li>&bull; 2,000 Monthly Credits</li>
+                      <li>&bull; Videos up to 120 min</li>
+                      <li>&bull; Highest queue priority</li>
+                      <li>&bull; Email completion notices</li>
                     </ul>
                     <button
                       onClick={() => {
                         setPricingModalTab("plans");
                         setPricingModalOpen(true);
                       }}
-                      className="mt-auto w-full rounded-xl border border-white/10 bg-white/5 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white cursor-pointer"
+                      className="mt-auto w-full rounded-md border border-white/[0.08] bg-white/[0.03] py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.08] hover:text-white cursor-pointer"
                     >
                       Subscribe ($49/mo)
                     </button>
@@ -576,68 +577,68 @@ export default function DashboardPage() {
 
           {/* TAB 4: SETTINGS & PREFERENCES */}
           {currentTab === "settings" && (
-            <div className="flex flex-col gap-6">
+            <div className="flex flex-col gap-5">
               <div>
-                <h2 className="text-2xl font-bold text-white tracking-tight">Settings & Preferences</h2>
-                <p className="text-sm text-zinc-400 mt-1">Manage your video processing defaults and account preferences.</p>
+                <h2 className="text-xl font-semibold text-white tracking-tight">Settings & Preferences</h2>
+                <p className="text-xs text-zinc-400 mt-0.5">Manage default pipeline options and account preferences.</p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 sm:p-8 flex flex-col gap-6">
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+              <div className="rounded-xl border border-white/[0.08] bg-[#111319] p-5 sm:p-6 flex flex-col gap-5">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Target Clip Duration</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Optimized length for TikTok, YouTube Shorts, and Instagram Reels</p>
+                    <h4 className="text-xs font-semibold text-white">Target Clip Duration</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">Standard duration for short-form video feeds</p>
                   </div>
-                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200">
-                    30s – 60s (Standard)
+                  <span className="rounded bg-white/[0.04] border border-white/[0.08] px-2.5 py-1 text-xs font-mono text-zinc-300">
+                    30s – 60s
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Default Video Alignment</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Frame cropping optimized for mobile vertical feeds</p>
+                    <h4 className="text-xs font-semibold text-white">Default Video Alignment</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">Frame cropping for mobile vertical viewing</p>
                   </div>
-                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-200">
+                  <span className="rounded bg-white/[0.04] border border-white/[0.08] px-2.5 py-1 text-xs font-mono text-zinc-300">
                     9:16 Vertical
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Automated Subtitle Generation</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Generate synchronized animated captions for every clip</p>
+                    <h4 className="text-xs font-semibold text-white">Automated Subtitle Generation</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">Transcribe audio and burn in synchronized subtitles</p>
                   </div>
-                  <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-400">
+                  <span className="flex items-center gap-1.5 text-xs text-emerald-400">
                     <CheckCircle2 className="h-3.5 w-3.5" />
-                    <span>Always Enabled</span>
+                    <span>Enabled</span>
                   </span>
                 </div>
 
-                <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
+                <div className="flex items-center justify-between border-b border-white/[0.06] pb-3.5">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Storage Retention</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">Rendered clips are safely available in your cloud dashboard for 24 hours</p>
+                    <h4 className="text-xs font-semibold text-white">Storage Retention</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">Rendered clips are retained in cloud storage for 24 hours</p>
                   </div>
-                  <span className="rounded-lg bg-zinc-800 px-3 py-1.5 text-xs font-semibold text-zinc-300">
-                    24h Ephemeral Window
+                  <span className="rounded bg-white/[0.04] border border-white/[0.08] px-2.5 py-1 text-xs font-mono text-zinc-300">
+                    24h Window
                   </span>
                 </div>
 
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pt-2">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
                   <div>
-                    <h4 className="text-sm font-bold text-white">Subscription & Plan Upgrades</h4>
-                    <p className="text-xs text-zinc-400 mt-0.5">View your quota, change monthly plans, or purchase instant credit boost packs</p>
+                    <h4 className="text-xs font-semibold text-white">Subscription & Plan Upgrades</h4>
+                    <p className="text-[11px] text-zinc-400 mt-0.5">Manage recurring subscriptions or buy credit boost packs</p>
                   </div>
                   <button
                     onClick={() => {
                       setPricingModalTab("plans");
                       setPricingModalOpen(true);
                     }}
-                    className="inline-flex items-center justify-center gap-2 rounded-xl bg-blue-600 hover:bg-blue-500 px-4 py-2 text-xs font-bold text-white transition shrink-0 cursor-pointer shadow"
+                    className="inline-flex items-center justify-center gap-1.5 rounded-md bg-white px-3.5 py-1.5 text-xs font-semibold text-black transition hover:bg-zinc-200 shrink-0 cursor-pointer"
                   >
-                    <span>Manage Plans & Upgrades</span>
-                    <ArrowUpRight className="h-3.5 w-3.5" />
+                    <span>Manage Plans</span>
+                    <ArrowUpRight className="h-3 w-3" />
                   </button>
                 </div>
               </div>

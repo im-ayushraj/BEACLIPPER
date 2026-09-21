@@ -225,34 +225,34 @@ export default function SplitVideoPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#090a0f] text-white flex flex-col selection:bg-purple-500/30">
+    <div className="min-h-screen bg-[#090a0e] text-white flex flex-col selection:bg-white/20">
       <Navbar />
 
       <main className="flex-1 py-10 px-4 sm:px-6 lg:px-8 max-w-5xl w-full mx-auto flex flex-col gap-8">
         {/* Top Header & Mode Indicator */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-purple-500/10 text-purple-400 border border-purple-500/20">
-                <Scissors className="h-3 w-3" />
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono uppercase tracking-wider bg-white/[0.04] text-zinc-300 border border-white/10">
+                <Scissors className="h-3 w-3 text-zinc-400" />
                 <span>Deterministic Splitter</span>
               </span>
-              <span className="text-xs text-zinc-500">• Sequential Equal Cuts</span>
+              <span className="text-xs text-zinc-500 font-mono">• Sequential Equal Cuts</span>
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-white">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
               Split Video
             </h1>
             <p className="text-sm text-zinc-400 mt-1">
-              Split your long video into equal-length clips with exact timestamps. No AI, no transcripts.
+              Split your long video into equal-length segments with precise keyframe cuts. No AI, zero transcription overhead.
             </p>
           </div>
 
           <div className="flex items-center gap-2">
             <Link
               href="/dashboard"
-              className="inline-flex items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.03] px-3.5 py-2 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.03] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
             >
-              <Sparkles className="h-3.5 w-3.5 text-blue-400" />
+              <Sparkles className="h-3.5 w-3.5 text-zinc-400" />
               <span>Switch to AI Clipper</span>
             </Link>
           </div>
@@ -260,15 +260,15 @@ export default function SplitVideoPage() {
 
         {/* Global Error Banner */}
         {errorMessage && (
-          <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-200 text-sm">
+          <div className="flex items-start gap-3 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-red-200 text-sm">
             <AlertCircle className="h-5 w-5 text-red-400 shrink-0 mt-0.5" />
             <div className="flex-1">
-              <p className="font-semibold text-red-300">Splitting Error</p>
+              <p className="font-semibold text-red-300 text-xs">Splitting Error</p>
               <p className="text-xs text-red-200/90 mt-0.5">{errorMessage}</p>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-xs font-semibold text-red-400 hover:text-red-200 transition"
+              className="text-xs font-medium text-red-400 hover:text-red-200 transition"
             >
               Dismiss
             </button>
@@ -277,7 +277,7 @@ export default function SplitVideoPage() {
 
         {/* STATE 1: UPLOAD & CONFIGURATION (Before starting split) */}
         {!isProcessing && (!currentJob || currentJob.status !== "completed") && (
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-6">
             {/* Upload Area */}
             <div
               onDragOver={handleDragOver}
@@ -285,10 +285,10 @@ export default function SplitVideoPage() {
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
               className={cn(
-                "relative flex flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 sm:p-12 transition cursor-pointer text-center group",
+                "relative flex flex-col items-center justify-center rounded-xl border border-dashed p-8 sm:p-12 transition cursor-pointer text-center group",
                 isDragOver
-                  ? "border-purple-500 bg-purple-500/[0.05]"
-                  : "border-white/15 bg-[#11141d]/70 hover:border-white/30 hover:bg-[#11141d]"
+                  ? "border-white/40 bg-white/[0.03]"
+                  : "border-white/15 bg-[#111318]/50 hover:border-white/25 hover:bg-[#111318]"
               )}
             >
               <input
@@ -303,20 +303,20 @@ export default function SplitVideoPage() {
                 className="hidden"
               />
 
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-white/[0.06] text-white border border-white/10 mb-4 transition group-hover:scale-105 group-hover:bg-purple-500/20 group-hover:text-purple-300 group-hover:border-purple-500/30">
-                <Upload className="h-6 w-6" />
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.04] text-zinc-300 border border-white/[0.08] mb-3.5 transition group-hover:text-white group-hover:border-white/20">
+                <Upload className="h-5 w-5" />
               </div>
 
-              <h3 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                {file ? "Change selected video" : "Upload your video to split"}
+              <h3 className="text-sm sm:text-base font-semibold text-white tracking-tight">
+                {file ? "Change selected video" : "Upload video to split"}
               </h3>
-              <p className="text-xs sm:text-sm text-zinc-400 mt-1 max-w-md">
-                Drag and drop your file here, or click to browse. Supports MP4, MOV, MKV, WebM, and AVI.
+              <p className="text-xs text-zinc-400 mt-1 max-w-sm">
+                Drag and drop your video file here, or click to browse. Supports MP4, MOV, MKV, WebM, and AVI.
               </p>
 
               <button
                 type="button"
-                className="mt-5 rounded-xl bg-white/10 px-4 py-2 text-xs font-semibold text-white transition hover:bg-white/20 border border-white/10"
+                className="mt-4 rounded-lg bg-white/[0.05] px-3.5 py-1.5 text-xs font-medium text-zinc-300 transition hover:bg-white/[0.1] border border-white/10"
               >
                 Choose Video
               </button>
@@ -324,26 +324,26 @@ export default function SplitVideoPage() {
 
             {/* Video Details Card (Appears once video selected) */}
             {file && (
-              <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 sm:p-8 flex flex-col gap-6 shadow-sm">
+              <div className="rounded-xl border border-white/[0.08] bg-[#111318] p-6 flex flex-col gap-6 shadow-sm">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-white/[0.08] pb-4">
                   <div className="flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-white/[0.04] text-zinc-300 border border-white/[0.08]">
                       <FileVideo className="h-5 w-5" />
                     </div>
                     <div>
-                      <h4 className="text-sm sm:text-base font-bold text-white truncate max-w-sm sm:max-w-md">
+                      <h4 className="text-sm font-semibold text-white truncate max-w-sm sm:max-w-md">
                         {file.name}
                       </h4>
-                      <p className="text-xs text-zinc-400 mt-0.5">
-                        {formatFileSize(file.size)} &bull; {detectedResolution || "Analyzing..."}
+                      <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                        {formatFileSize(file.size)} &bull; {detectedResolution || "Analyzing resolution..."}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-3 text-xs font-mono">
-                    <div className="rounded-lg bg-black/40 border border-white/10 px-3 py-1.5 text-zinc-300">
-                      <span className="text-zinc-500 mr-1">Duration:</span>
-                      <span className="font-bold text-white">
+                    <div className="rounded-lg bg-black/40 border border-white/[0.08] px-3 py-1.5 text-zinc-300">
+                      <span className="text-zinc-500 mr-1.5">Source Length:</span>
+                      <span className="font-semibold text-white">
                         {detectedDuration ? formatTime(detectedDuration) : "Detecting..."}
                       </span>
                     </div>
@@ -354,12 +354,12 @@ export default function SplitVideoPage() {
                 <div className="flex flex-col gap-4">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div>
-                      <label className="text-sm font-bold text-white flex items-center gap-1.5">
-                        <Clock className="h-4 w-4 text-purple-400" />
-                        <span>Clip Duration</span>
+                      <label className="text-sm font-semibold text-white flex items-center gap-1.5">
+                        <Clock className="h-4 w-4 text-zinc-400" />
+                        <span>Target Clip Duration</span>
                       </label>
                       <p className="text-xs text-zinc-400 mt-0.5">
-                        Every resulting segment will be exactly this length (last clip keeps remainder).
+                        All segments will be created with this exact duration (last segment keeps remainder).
                       </p>
                     </div>
 
@@ -377,25 +377,25 @@ export default function SplitVideoPage() {
                             setDuration(parsed);
                           }
                         }}
-                        className="h-10 w-24 rounded-lg border border-white/15 bg-black/50 px-3 text-center text-sm font-bold font-mono text-white outline-none transition focus:border-purple-500 focus:ring-1 focus:ring-purple-500"
+                        className="h-9 w-24 rounded-lg border border-white/10 bg-black/40 px-3 text-center text-sm font-mono font-medium text-white outline-none transition focus:border-white/30"
                       />
-                      <span className="text-xs font-semibold text-zinc-400">seconds</span>
+                      <span className="text-xs font-medium text-zinc-400">seconds</span>
                     </div>
                   </div>
 
                   {/* Quick Select Preset Buttons */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="text-xs text-zinc-500 mr-1">Quick select:</span>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-xs text-zinc-500 font-mono mr-1">Presets:</span>
                     {DURATION_PRESETS.map((presetSec) => (
                       <button
                         key={presetSec}
                         type="button"
                         onClick={() => handleDurationChange(presetSec)}
                         className={cn(
-                          "rounded-lg px-3 py-1 text-xs font-semibold transition border",
+                          "rounded-md px-2.5 py-1 text-xs font-mono font-medium transition border",
                           duration === presetSec
-                            ? "bg-purple-500 text-white border-purple-400 shadow-sm"
-                            : "bg-white/[0.04] text-zinc-300 border-white/10 hover:border-white/25 hover:text-white"
+                            ? "bg-white text-black border-white"
+                            : "bg-white/[0.03] text-zinc-400 border-white/[0.08] hover:border-white/20 hover:text-white"
                         )}
                       >
                         {presetSec}s
@@ -404,19 +404,19 @@ export default function SplitVideoPage() {
                   </div>
 
                   {/* Estimated Output Preview Banner */}
-                  <div className="mt-2 rounded-xl bg-purple-500/[0.06] border border-purple-500/20 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-zinc-300">
+                  <div className="rounded-lg bg-black/30 border border-white/[0.06] p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-zinc-300">
                     <div className="flex items-center gap-2">
-                      <Film className="h-4 w-4 text-purple-400 shrink-0" />
+                      <Film className="h-4 w-4 text-zinc-400 shrink-0" />
                       <span>
                         Estimated output:{" "}
-                        <strong className="text-white font-bold">
+                        <strong className="text-white font-semibold font-mono">
                           {estimatedClips !== null ? `${estimatedClips} clips` : "Calculating..."}
                         </strong>{" "}
-                        (sequential {duration}s cuts)
+                        (sequential {duration}s segments)
                       </span>
                     </div>
                     {detectedDuration && (
-                      <span className="text-[11px] text-zinc-400 font-mono">
+                      <span className="text-[11px] text-zinc-500 font-mono">
                         Formula: ceil({detectedDuration.toFixed(1)}s / {duration}s)
                       </span>
                     )}
@@ -428,10 +428,10 @@ export default function SplitVideoPage() {
                   <button
                     type="button"
                     onClick={handleStartSplit}
-                    className="flex h-12 w-full sm:w-auto items-center justify-center gap-2.5 rounded-xl bg-purple-600 px-8 text-sm font-bold text-white transition hover:bg-purple-500 active:scale-[0.98] shadow-lg shadow-purple-600/20"
+                    className="flex h-10 w-full sm:w-auto items-center justify-center gap-2 rounded-lg bg-white px-6 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98]"
                   >
-                    <Scissors className="h-4 w-4" />
-                    <span>Split Video ({duration}s clips)</span>
+                    <Scissors className="h-3.5 w-3.5" />
+                    <span>Split Video ({duration}s segments)</span>
                   </button>
                 </div>
               </div>
@@ -441,59 +441,59 @@ export default function SplitVideoPage() {
 
         {/* STATE 2: DEDICATED PROCESSING SCREEN */}
         {isProcessing && (
-          <div className="rounded-2xl border border-white/10 bg-[#11141d] p-6 sm:p-10 shadow-sm flex flex-col gap-6">
+          <div className="rounded-xl border border-white/[0.08] bg-[#111318] p-6 sm:p-8 flex flex-col gap-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-purple-400">
+                <span className="text-[11px] font-mono uppercase tracking-wider text-zinc-400">
                   Video Split Engine
                 </span>
-                <h3 className="text-xl sm:text-2xl font-bold text-white tracking-tight mt-0.5">
-                  Splitting your video
+                <h3 className="text-xl font-bold text-white tracking-tight mt-0.5">
+                  Splitting Video
                 </h3>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-                  {currentJob?.current_message || (uploadProgress < 100 ? `Uploading video (${uploadProgress}%)...` : "Creating fixed-length clips...")}
+                <p className="text-xs text-zinc-400 mt-1">
+                  {currentJob?.current_message || (uploadProgress < 100 ? `Uploading video (${uploadProgress}%)...` : "Cutting sequential segments via stream-copy...")}
                 </p>
               </div>
 
-              <div className="flex flex-col items-end">
-                <span className="font-mono text-3xl font-bold text-white tracking-tight">
+              <div className="flex flex-col sm:items-end">
+                <span className="font-mono text-2xl font-bold text-white tracking-tight">
                   {currentJob?.progress_percent || uploadProgress || 5}%
                 </span>
                 <span className="text-xs text-zinc-400 font-mono mt-0.5">
-                  {currentJob?.clips_created || 0} / {currentJob?.total_clips || estimatedClips || "?"} clips created
+                  {currentJob?.clips_created || 0} / {currentJob?.total_clips || estimatedClips || "?"} clips cut
                 </span>
               </div>
             </div>
 
             {/* Progress Bar Track */}
-            <div className="h-2.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
+            <div className="h-1.5 w-full rounded-full bg-white/[0.06] overflow-hidden">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 transition-all duration-300 ease-out"
+                className="h-full rounded-full bg-white transition-all duration-300 ease-out"
                 style={{ width: `${currentJob?.progress_percent || (uploadProgress > 0 ? Math.round(uploadProgress * 0.2) : 5)}%` }}
               />
             </div>
 
             {/* Non-AI Simple Stage Checklist */}
-            <div className="flex flex-col gap-2.5 pt-2">
-              <div className="flex items-center gap-3 text-xs sm:text-sm text-emerald-400">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
+            <div className="flex flex-col gap-2 pt-1 border-t border-white/[0.06]">
+              <div className="flex items-center gap-2.5 text-xs text-emerald-400 font-mono">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
                 <span>Video uploaded ({file ? formatFileSize(file.size) : "100%"})</span>
               </div>
-              <div className="flex items-center gap-3 text-xs sm:text-sm text-emerald-400">
-                <CheckCircle2 className="h-4 w-4 shrink-0" />
-                <span>Video analyzed ({detectedResolution || "Full resolution"})</span>
+              <div className="flex items-center gap-2.5 text-xs text-emerald-400 font-mono">
+                <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />
+                <span>Video container analyzed ({detectedResolution || "Source Resolution"})</span>
               </div>
-              <div className="flex items-center gap-3 text-xs sm:text-sm text-purple-300 font-semibold">
-                <Loader2 className="h-4 w-4 shrink-0 animate-spin text-purple-400" />
+              <div className="flex items-center gap-2.5 text-xs text-white font-mono">
+                <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-zinc-400" />
                 <span>
-                  Splitting video into {duration}-second segments ({currentJob?.clips_created || 0} clips rendered so far)...
+                  Cutting {duration}s segments ({currentJob?.clips_created || 0} completed)...
                 </span>
               </div>
-              <div className="flex items-center gap-3 text-xs sm:text-sm text-zinc-500">
-                <div className="h-4 w-4 rounded-full border border-zinc-700 flex items-center justify-center shrink-0">
-                  <span className="h-1.5 w-1.5 rounded-full bg-zinc-700"></span>
+              <div className="flex items-center gap-2.5 text-xs text-zinc-500 font-mono">
+                <div className="h-3.5 w-3.5 rounded-full border border-zinc-700 flex items-center justify-center shrink-0">
+                  <span className="h-1 w-1 rounded-full bg-zinc-700"></span>
                 </div>
-                <span>Finalizing files & generating bulk ZIP package</span>
+                <span>Packaging ZIP archive</span>
               </div>
             </div>
           </div>
@@ -503,23 +503,24 @@ export default function SplitVideoPage() {
         {!isProcessing && currentJob && currentJob.status === "completed" && (
           <div className="flex flex-col gap-6">
             {/* Completion Header Banner */}
-            <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/10 p-6 sm:p-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="rounded-xl border border-white/[0.08] bg-[#111318] p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <span className="text-xs font-bold uppercase tracking-widest text-emerald-400">
-                  Splitting Complete
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-mono uppercase tracking-wider text-emerald-400 mb-1">
+                  <CheckCircle2 className="h-3.5 w-3.5" />
+                  <span>Splitting Complete</span>
                 </span>
-                <h2 className="text-2xl font-bold text-white tracking-tight mt-0.5">
+                <h2 className="text-xl font-bold text-white tracking-tight">
                   Your clips are ready
                 </h2>
-                <p className="text-xs sm:text-sm text-emerald-200/80 mt-1">
-                  Successfully created {currentJob.clips.length} equal-length {currentJob.clip_duration}s segments.
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Generated {currentJob.clips.length} equal-length {currentJob.clip_duration}s clips with zero quality loss.
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-3">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   onClick={handleReset}
-                  className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/5 px-4 py-2.5 text-xs font-semibold text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                  className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white"
                 >
                   <RotateCcw className="h-3.5 w-3.5" />
                   <span>Split Another</span>
@@ -529,9 +530,9 @@ export default function SplitVideoPage() {
                   <a
                     href={getDownloadAllZipUrl(currentJob.job_id)}
                     download="split-clips.zip"
-                    className="flex items-center gap-2 rounded-xl bg-white px-5 py-2.5 text-xs font-bold text-black transition hover:bg-zinc-200 active:scale-[0.98] shadow-md shadow-white/5"
+                    className="flex items-center gap-2 rounded-lg bg-white px-4 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98]"
                   >
-                    <Archive className="h-4 w-4" />
+                    <Archive className="h-3.5 w-3.5" />
                     <span>Download All (ZIP)</span>
                   </a>
                 )}
@@ -539,11 +540,11 @@ export default function SplitVideoPage() {
             </div>
 
             {/* Clips Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {currentJob.clips.map((clip) => (
                 <div
                   key={clip.filename}
-                  className="rounded-2xl border border-white/10 bg-[#11141d] overflow-hidden flex flex-col transition hover:border-white/20 shadow-sm"
+                  className="rounded-xl border border-white/[0.08] bg-[#111318] overflow-hidden flex flex-col transition hover:border-white/20 shadow-sm"
                 >
                   {/* Video Player */}
                   <div className="relative aspect-video bg-black/80 flex items-center justify-center">
@@ -562,13 +563,13 @@ export default function SplitVideoPage() {
                   </div>
 
                   {/* Clip Details */}
-                  <div className="p-4 flex-1 flex flex-col justify-between gap-3">
+                  <div className="p-3.5 flex-1 flex flex-col justify-between gap-3">
                     <div>
                       <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold text-white">
-                          Clip {clip.index.toString().padStart(3, "0")}
+                        <span className="text-xs font-bold text-white font-mono">
+                          Clip #{clip.index.toString().padStart(3, "0")}
                         </span>
-                        <span className="text-[11px] font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded border border-purple-500/20">
+                        <span className="text-[11px] font-mono text-zinc-400 bg-white/[0.04] px-2 py-0.5 rounded border border-white/[0.08]">
                           {clip.duration}s
                         </span>
                       </div>
@@ -577,16 +578,16 @@ export default function SplitVideoPage() {
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between border-t border-white/[0.08] pt-3">
+                    <div className="flex items-center justify-between border-t border-white/[0.06] pt-3">
                       <span className="text-[11px] text-zinc-500 font-mono">
                         {clip.size_formatted || "MP4 Video"}
                       </span>
                       <a
                         href={getIndividualClipDownloadUrl(currentJob.job_id, clip.filename)}
                         download={clip.filename}
-                        className="inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/20"
+                        className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-2.5 py-1.5 text-xs font-medium text-zinc-200 transition hover:bg-white/10 hover:text-white"
                       >
-                        <Download className="h-3.5 w-3.5" />
+                        <Download className="h-3 w-3" />
                         <span>Download</span>
                       </a>
                     </div>

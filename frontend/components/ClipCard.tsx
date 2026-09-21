@@ -39,7 +39,7 @@ export function ClipCard({ clip, index }: ClipCardProps) {
   const clipNumber = String(index + 1).padStart(2, "0");
 
   return (
-    <div className="group rounded-2xl border border-white/[0.08] bg-[#11141d] overflow-hidden flex flex-col transition hover:border-white/20 hover:-translate-y-1 shadow-md">
+    <div className="group rounded-xl border border-white/[0.08] bg-[#111319] overflow-hidden flex flex-col transition hover:border-white/[0.16]">
       {/* Video Container */}
       <div className="relative aspect-video w-full bg-black overflow-hidden flex items-center justify-center">
         <video
@@ -53,50 +53,46 @@ export function ClipCard({ clip, index }: ClipCardProps) {
         />
 
         {/* Duration Badge */}
-        <div className="pointer-events-none absolute bottom-3 right-3 rounded-md border border-white/15 bg-black/80 backdrop-blur-md px-2 py-0.5 font-mono text-[11px] font-semibold text-white shadow">
+        <div className="pointer-events-none absolute bottom-2.5 right-2.5 rounded border border-white/10 bg-black/80 px-1.5 py-0.5 font-mono text-[10px] text-zinc-200">
           {formatTime(clip.duration)}
         </div>
       </div>
 
       {/* Content Body */}
-      <div className="p-5 flex flex-col gap-3.5 flex-1">
+      <div className="p-4 flex flex-col gap-3 flex-1">
         {/* Header meta */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-xs font-bold text-zinc-400">CLIP {clipNumber}</span>
-            <span className="inline-flex items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-300">
-              <Clock className="h-2.5 w-2.5" />
-              <span>24h Retention</span>
-            </span>
+            <span className="font-mono text-xs font-semibold text-zinc-400">CLIP {clipNumber}</span>
           </div>
-          <div className="flex items-center gap-1 rounded-full border border-blue-500/30 bg-blue-500/10 px-2.5 py-0.5 text-xs font-bold text-blue-400">
-            <Sparkles className="h-3 w-3" />
-            <span>{clip.score} / 10</span>
+          <div className="flex items-center gap-1 font-mono text-[11px] text-zinc-300 rounded border border-white/[0.08] bg-white/[0.03] px-2 py-0.5">
+            <span>Score</span>
+            <span className="text-white font-semibold">{clip.score}</span>
           </div>
         </div>
 
         {/* Title */}
-        <h3 className="text-base font-bold text-white leading-snug tracking-tight line-clamp-2">
+        <h3 className="text-sm font-semibold text-white leading-snug tracking-tight line-clamp-2">
           {clip.title}
         </h3>
 
         {/* Timestamp */}
-        <div className="flex items-center gap-1.5 font-mono text-xs text-zinc-400">
-          <Clock className="h-3.5 w-3.5 text-zinc-500" />
+        <div className="flex items-center gap-1.5 font-mono text-[11px] text-zinc-400">
+          <Clock className="h-3 w-3 text-zinc-500" />
           <span>
-            {formatTime(clip.start)} – {formatTime(clip.end)}
+            {formatTime(clip.start)} → {formatTime(clip.end)}
           </span>
-          <span className="text-zinc-600">•</span>
+          <span className="text-zinc-600">&bull;</span>
           <span>{clip.duration}s</span>
         </div>
 
         {/* Tags */}
         {clip.tags && clip.tags.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1">
             {clip.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-full border border-white/[0.06] bg-white/[0.04] px-2 py-0.5 text-[11px] font-medium text-zinc-400"
+                className="rounded border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-mono text-zinc-400"
               >
                 {tag}
               </span>
@@ -106,18 +102,10 @@ export function ClipCard({ clip, index }: ClipCardProps) {
 
         {/* Explanation Context */}
         {clip.explanation && (
-          <div className="rounded-lg border-l-2 border-blue-500 bg-[#07080b] p-2.5 text-xs text-zinc-300 leading-relaxed">
+          <div className="rounded-md border border-white/[0.06] bg-[#0c0e12] p-2.5 text-xs text-zinc-300 leading-relaxed">
             <span className="font-semibold text-zinc-400">Context: </span>
             {clip.explanation}
           </div>
-        )}
-
-        {/* Viral Reason */}
-        {clip.reason && (
-          <p className="text-xs italic text-zinc-500 line-clamp-2">
-            <span className="font-semibold not-italic text-zinc-400">Hook: </span>
-            {clip.reason}
-          </p>
         )}
 
         {/* Actions Row */}
@@ -126,7 +114,7 @@ export function ClipCard({ clip, index }: ClipCardProps) {
           <a
             href={videoSrc}
             download={clip.file}
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-xl bg-white px-4 py-2.5 text-xs font-bold text-black transition hover:bg-zinc-200 active:scale-[0.98] shadow-sm"
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98]"
           >
             <Download className="h-3.5 w-3.5" />
             <span>Download</span>
@@ -136,9 +124,9 @@ export function ClipCard({ clip, index }: ClipCardProps) {
           <button
             onClick={handleCopy}
             title="Copy title and tags"
-            className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/10 bg-white/[0.03] text-zinc-300 transition hover:bg-white/10 hover:text-white"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
           >
-            {copied ? <Check className="h-4 w-4 text-emerald-400" /> : <Share2 className="h-4 w-4" />}
+            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Share2 className="h-3.5 w-3.5" />}
           </button>
         </div>
       </div>

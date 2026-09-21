@@ -84,37 +84,34 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/85 p-4 sm:p-6 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl max-h-[92vh] overflow-y-auto my-auto rounded-2xl border border-white/15 bg-[#0d0f17] p-6 sm:p-8 text-white shadow-2xl shadow-blue-900/40">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center overflow-y-auto bg-black/80 p-4 sm:p-6 backdrop-blur-sm">
+      <div className="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto my-auto rounded-xl border border-white/[0.1] bg-[#101217] p-6 sm:p-7 text-white shadow-2xl">
         {/* Close Button */}
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-white/10 transition z-10"
+          className="absolute top-5 right-5 p-1.5 rounded-md text-zinc-400 hover:text-white hover:bg-white/5 transition z-10"
           aria-label="Close"
         >
-          <X className="w-5 h-5" />
+          <X className="w-4 h-4" />
         </button>
 
         {/* Header */}
-        <div className="text-center max-w-xl mx-auto mb-6">
-          <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-400 text-xs font-semibold mb-3">
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Production Plans & Credits</span>
-          </div>
-          <h2 className="text-2xl sm:text-3xl font-bold tracking-tight text-white">
-            Level up your video creation
+        <div className="text-center max-w-md mx-auto mb-6">
+          <span className="text-xs font-medium text-zinc-400">Plans & Credits</span>
+          <h2 className="text-xl sm:text-2xl font-semibold tracking-tight text-white mt-1">
+            Choose your usage tier
           </h2>
-          <p className="text-zinc-400 text-sm mt-1.5">
-            Upgrade your plan for higher monthly quotas or top-up extra credits anytime.
+          <p className="text-zinc-400 text-xs mt-1">
+            Upgrade your monthly processing allowance or top-up extra credits.
           </p>
 
           {/* Toggle Tabs */}
-          <div className="inline-flex p-1 bg-white/5 border border-white/10 rounded-xl mt-5">
+          <div className="inline-flex p-0.5 bg-white/[0.04] border border-white/[0.08] rounded-lg mt-4 text-xs font-medium">
             <button
               onClick={() => setTab("plans")}
-              className={`px-5 py-1.5 text-xs font-semibold rounded-lg transition ${
+              className={`px-3.5 py-1.5 rounded-md transition ${
                 tab === "plans"
-                  ? "bg-blue-600 text-white shadow-sm"
+                  ? "bg-white text-black font-semibold shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
             >
@@ -122,9 +119,9 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
             </button>
             <button
               onClick={() => setTab("credits")}
-              className={`px-5 py-1.5 text-xs font-semibold rounded-lg transition ${
+              className={`px-3.5 py-1.5 rounded-md transition ${
                 tab === "credits"
-                  ? "bg-blue-600 text-white shadow-sm"
+                  ? "bg-white text-black font-semibold shadow-sm"
                   : "text-zinc-400 hover:text-white"
               }`}
             >
@@ -134,98 +131,92 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
         </div>
 
         {errorMessage && (
-          <div className="mb-6 p-3 rounded-lg bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs text-center">
+          <div className="mb-5 p-2.5 rounded-md bg-red-950/30 border border-red-500/20 text-red-300 text-xs text-center">
             {errorMessage}
           </div>
         )}
 
         {/* Tab 1: Monthly Plans */}
         {tab === "plans" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Free Tier */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 flex flex-col justify-between">
               <div>
-                <div className="text-sm font-semibold text-zinc-300">Free Starter</div>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">$0</span>
-                  <span className="text-xs text-zinc-500">/month</span>
+                <div className="text-xs font-semibold text-zinc-300">Free</div>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-white">$0</span>
+                  <span className="text-xs text-zinc-500">/mo</span>
                 </div>
-                <p className="text-xs text-zinc-400 mt-2">
-                  Perfect for exploring AI clipping features.
+                <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                  Basic starter access to test the clipping engine.
                 </p>
-                <div className="border-t border-white/5 my-4" />
-                <ul className="space-y-2.5 text-xs text-zinc-300">
+                <div className="border-t border-white/[0.06] my-3.5" />
+                <ul className="space-y-2 text-xs text-zinc-300">
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span><strong>100 monthly credits</strong></span>
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span>100 starter credits</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Videos up to 35 minutes</span>
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span>Videos up to 35 min</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Direct video file uploads</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>24h cloud storage retention</span>
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span>24h storage retention</span>
                   </li>
                 </ul>
               </div>
               <button
                 disabled
-                className="w-full mt-6 py-2 px-3 rounded-lg bg-white/5 border border-white/10 text-xs font-semibold text-zinc-400 cursor-not-allowed"
+                className="w-full mt-5 py-1.5 px-3 rounded-md bg-white/[0.04] border border-white/[0.08] text-xs font-medium text-zinc-500 cursor-not-allowed"
               >
-                Current Default Plan
+                Current tier
               </button>
             </div>
 
-            {/* Creator Tier (Popular) */}
-            <div className="relative rounded-xl border-2 border-blue-500 bg-blue-950/20 p-5 flex flex-col justify-between shadow-lg shadow-blue-500/10">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-blue-600 text-[10px] font-bold uppercase tracking-wider text-white shadow">
-                Most Popular
-              </div>
+            {/* Creator Tier */}
+            <div className="relative rounded-lg border border-blue-500/40 bg-blue-950/10 p-4 flex flex-col justify-between">
               <div>
-                <div className="text-sm font-semibold text-blue-300">Creator</div>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">$19</span>
-                  <span className="text-xs text-zinc-400">/month</span>
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-blue-300">Creator</div>
+                  <span className="rounded bg-blue-600/30 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                    Popular
+                  </span>
                 </div>
-                <p className="text-xs text-zinc-400 mt-2">
-                  Designed for active YouTube & TikTok creators.
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-white">$19</span>
+                  <span className="text-xs text-zinc-400">/mo</span>
+                </div>
+                <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                  For creators publishing regularly.
                 </p>
-                <div className="border-t border-blue-500/20 my-4" />
-                <ul className="space-y-2.5 text-xs text-zinc-200">
+                <div className="border-t border-white/[0.06] my-3.5" />
+                <ul className="space-y-2 text-xs text-zinc-200">
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span><strong>600 monthly credits</strong> (6x quota)</span>
+                    <span><strong>600 monthly credits</strong></span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Videos up to <strong>60 minutes</strong></span>
+                    <span>Videos up to 60 min</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Priority background processing</span>
+                    <span>Priority queue status</span>
                   </li>
                   <li className="flex items-center gap-2">
                     <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Automatic AI Subtitles & Hooks</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-                    <span>Direct ZIP archive downloads</span>
+                    <span>Direct ZIP downloads</span>
                   </li>
                 </ul>
               </div>
               <button
                 onClick={() => handleCheckout("plan", "creator")}
                 disabled={loadingItem === "creator"}
-                className="w-full mt-6 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 active:scale-[0.98] text-xs font-semibold text-white transition flex items-center justify-center gap-1.5 shadow"
+                className="w-full mt-5 py-1.5 px-3 rounded-md bg-white hover:bg-zinc-200 active:scale-[0.98] text-xs font-semibold text-black transition flex items-center justify-center gap-1.5"
               >
                 {loadingItem === "creator" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <>
                     <span>Upgrade to Creator</span>
@@ -236,47 +227,43 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
             </div>
 
             {/* Pro Tier */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 flex flex-col justify-between">
               <div>
-                <div className="text-sm font-semibold text-purple-300">Pro Studio</div>
-                <div className="mt-3 flex items-baseline gap-1">
-                  <span className="text-3xl font-extrabold text-white">$49</span>
-                  <span className="text-xs text-zinc-400">/month</span>
+                <div className="text-xs font-semibold text-zinc-300">Pro Studio</div>
+                <div className="mt-2 flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-white">$49</span>
+                  <span className="text-xs text-zinc-400">/mo</span>
                 </div>
-                <p className="text-xs text-zinc-400 mt-2">
-                  For production teams and agencies.
+                <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">
+                  For agencies and production teams.
                 </p>
-                <div className="border-t border-white/5 my-4" />
-                <ul className="space-y-2.5 text-xs text-zinc-300">
+                <div className="border-t border-white/[0.06] my-3.5" />
+                <ul className="space-y-2 text-xs text-zinc-300">
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                     <span><strong>2,000 monthly credits</strong></span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                    <span>Videos up to <strong>120 minutes</strong></span>
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span>Videos up to 120 min</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
                     <span>Highest queue priority</span>
                   </li>
                   <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                    <span>High-Speed Cloud Storage & Exports</span>
-                  </li>
-                  <li className="flex items-center gap-2">
-                    <Check className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                    <span>Email completion notifications</span>
+                    <Check className="w-3.5 h-3.5 text-zinc-400 shrink-0" />
+                    <span>Email completion notices</span>
                   </li>
                 </ul>
               </div>
               <button
                 onClick={() => handleCheckout("plan", "pro")}
                 disabled={loadingItem === "pro"}
-                className="w-full mt-6 py-2 px-3 rounded-lg bg-white/10 hover:bg-white/20 active:scale-[0.98] text-xs font-semibold text-white transition flex items-center justify-center gap-1.5"
+                className="w-full mt-5 py-1.5 px-3 rounded-md border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] active:scale-[0.98] text-xs font-semibold text-white transition flex items-center justify-center gap-1.5"
               >
                 {loadingItem === "pro" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <>
                     <span>Upgrade to Pro</span>
@@ -290,27 +277,24 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
 
         {/* Tab 2: Credit Boost Packs */}
         {tab === "credits" && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Starter Boost */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between text-center">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 flex flex-col justify-between">
               <div>
-                <div className="p-3 w-12 h-12 rounded-xl bg-blue-500/10 text-blue-400 mx-auto flex items-center justify-center mb-3">
-                  <Zap className="w-6 h-6" />
-                </div>
-                <div className="text-base font-bold text-white">Starter Boost</div>
-                <div className="text-2xl font-black text-blue-400 mt-1">+100 Credits</div>
-                <p className="text-xs text-zinc-400 mt-2">
-                  Good for ~50 minutes of high-density AI clipping.
+                <div className="text-xs font-semibold text-zinc-300">Starter Pack</div>
+                <div className="mt-2 text-xl font-bold text-white">+100 Credits</div>
+                <div className="text-xs text-zinc-400 mt-1">$5.00 one-time</div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Good for ~50 minutes of AI video processing.
                 </p>
-                <div className="text-lg font-bold text-white mt-4">$5.00</div>
               </div>
               <button
                 onClick={() => handleCheckout("credit_package", "Starter Boost")}
                 disabled={loadingItem === "Starter Boost"}
-                className="w-full mt-5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5"
+                className="w-full mt-5 py-1.5 px-3 rounded-md border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition flex items-center justify-center gap-1.5"
               >
                 {loadingItem === "Starter Boost" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <span>Buy 100 Credits</span>
                 )}
@@ -318,28 +302,27 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
             </div>
 
             {/* Growth Pack */}
-            <div className="relative rounded-xl border border-blue-500/40 bg-blue-950/20 p-5 flex flex-col justify-between text-center">
-              <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-2.5 py-0.5 rounded-full bg-blue-600 text-[10px] font-bold uppercase tracking-wider text-white shadow">
-                Best Value
-              </div>
+            <div className="rounded-lg border border-blue-500/40 bg-blue-950/10 p-4 flex flex-col justify-between">
               <div>
-                <div className="p-3 w-12 h-12 rounded-xl bg-blue-500/20 text-blue-400 mx-auto flex items-center justify-center mb-3">
-                  <Sparkles className="w-6 h-6" />
+                <div className="flex items-center justify-between">
+                  <div className="text-xs font-semibold text-blue-300">Creator Pack</div>
+                  <span className="rounded bg-blue-600/30 px-1.5 py-0.5 text-[10px] font-medium text-blue-300">
+                    Popular
+                  </span>
                 </div>
-                <div className="text-base font-bold text-white">Growth Pack</div>
-                <div className="text-2xl font-black text-blue-400 mt-1">+500 Credits</div>
+                <div className="mt-2 text-xl font-bold text-white">+500 Credits</div>
+                <div className="text-xs text-zinc-400 mt-1">$20.00 one-time</div>
                 <p className="text-xs text-zinc-400 mt-2">
                   Good for ~250 minutes of video processing.
                 </p>
-                <div className="text-lg font-bold text-white mt-4">$20.00</div>
               </div>
               <button
                 onClick={() => handleCheckout("credit_package", "Growth Pack")}
                 disabled={loadingItem === "Growth Pack"}
-                className="w-full mt-5 py-2 px-3 rounded-lg bg-blue-600 hover:bg-blue-500 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5"
+                className="w-full mt-5 py-1.5 px-3 rounded-md bg-white hover:bg-zinc-200 text-xs font-semibold text-black transition flex items-center justify-center gap-1.5"
               >
                 {loadingItem === "Growth Pack" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <span>Buy 500 Credits</span>
                 )}
@@ -347,25 +330,22 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
             </div>
 
             {/* Pro Pack */}
-            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-5 flex flex-col justify-between text-center">
+            <div className="rounded-lg border border-white/[0.08] bg-white/[0.02] p-4 flex flex-col justify-between">
               <div>
-                <div className="p-3 w-12 h-12 rounded-xl bg-purple-500/10 text-purple-400 mx-auto flex items-center justify-center mb-3">
-                  <CreditCard className="w-6 h-6" />
-                </div>
-                <div className="text-base font-bold text-white">Pro Pack</div>
-                <div className="text-2xl font-black text-purple-400 mt-1">+1,500 Credits</div>
-                <p className="text-xs text-zinc-400 mt-2">
-                  Maximum credit top-up at our lowest per-minute rate.
+                <div className="text-xs font-semibold text-zinc-300">Studio Pack</div>
+                <div className="mt-2 text-xl font-bold text-white">+1,500 Credits</div>
+                <div className="text-xs text-zinc-400 mt-1">$50.00 one-time</div>
+                <p className="text-xs text-zinc-500 mt-2">
+                  Highest bulk discount for active workflows.
                 </p>
-                <div className="text-lg font-bold text-white mt-4">$50.00</div>
               </div>
               <button
                 onClick={() => handleCheckout("credit_package", "Pro Pack")}
                 disabled={loadingItem === "Pro Pack"}
-                className="w-full mt-5 py-2 px-3 rounded-lg bg-purple-600 hover:bg-purple-500 text-xs font-semibold text-white transition flex items-center justify-center gap-1.5"
+                className="w-full mt-5 py-1.5 px-3 rounded-md border border-white/[0.1] bg-white/[0.04] hover:bg-white/[0.08] text-xs font-medium text-white transition flex items-center justify-center gap-1.5"
               >
                 {loadingItem === "Pro Pack" ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <span>Buy 1,500 Credits</span>
                 )}
@@ -374,8 +354,8 @@ export function PricingModal({ isOpen, onClose, defaultTab = "plans" }: PricingM
           </div>
         )}
 
-        <div className="mt-6 text-center text-[11px] text-zinc-500">
-          Secure payment powered by Stripe. Cancel subscriptions anytime from your account dashboard.
+        <div className="mt-5 text-center text-[11px] text-zinc-500">
+          Secure billing handled via Stripe. Subscriptions can be managed or canceled anytime from account settings.
         </div>
       </div>
     </div>,
