@@ -9,7 +9,7 @@ import { ClipGrid } from "@/components/ClipGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MyClips } from "@/components/MyClips";
-import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips, deleteClip } from "@/lib/api/client";
+import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips, deleteClip, getActiveJob, cancelJob } from "@/lib/api/client";
 import {
   getUserCredits,
   getCreditTransactions,
@@ -46,6 +46,7 @@ export default function DashboardPage() {
   const [transactions, setTransactions] = useState<CreditTransaction[]>([]);
   const [usageSummary, setUsageSummary] = useState<UserUsageSummary | null>(null);
   const [isLoadingUsage, setIsLoadingUsage] = useState(false);
+  const [isCanceling, setIsCanceling] = useState(false);
 
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -62,6 +63,56 @@ export default function DashboardPage() {
       setUsageSummary(usage);
     } catch (e) {
       console.warn("Failed refreshing credit/usage data:", e);
+    }
+  };
+
+  const startPolling = (jobId: string, token?: string | null) => {
+    if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+
+    pollIntervalRef.current = setInterval(async () => {
+      try {
+        const jobData = await getJobStatus(jobId, token);
+        setCurrentJob(jobData);
+
+        if (jobData.status === "completed") {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setIsProcessing(false);
+          const newClips = jobData.clips || [];
+          setGeneratedClips(newClips);
+          setSavedClips((prev) => {
+            const rest = prev.filter(
+              (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
+            );
+            return [...newClips, ...rest];
+          });
+          refreshCreditsAndUsage();
+        } else if (jobData.status === "error" || jobData.status === "canceled") {
+          if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+          setIsProcessing(false);
+          setErrorMessage(jobData.error || "We couldn't finish processing this video.");
+          refreshCreditsAndUsage();
+        }
+      } catch (pollErr: any) {
+        console.error("Polling error", pollErr);
+      }
+    }, 1500);
+  };
+
+  const handleCancelJob = async () => {
+    if (!currentJob?.job_id) return;
+    setIsCanceling(true);
+    try {
+      const token = await getToken();
+      await cancelJob(currentJob.job_id, token);
+      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+      setCurrentJob(null);
+      setIsProcessing(false);
+      setErrorMessage(null);
+      await refreshCreditsAndUsage();
+    } catch (err: any) {
+      console.error("Failed to cancel job:", err);
+    } finally {
+      setIsCanceling(false);
     }
   };
 
@@ -87,6 +138,20 @@ export default function DashboardPage() {
 
       try {
         const token = await getToken();
+
+        // 1. Check if user currently has an active job in progress and resume live tracking
+        try {
+          const activeRes = await getActiveJob(token);
+          if (activeRes?.has_active_job && activeRes.job) {
+            setCurrentJob(activeRes.job);
+            setIsProcessing(true);
+            startPolling(activeRes.job.job_id, token);
+          }
+        } catch (activeErr) {
+          console.warn("Active job check error:", activeErr);
+        }
+
+        // 2. Fetch user's saved clips
         const data = await getSavedClips(token);
         if (data && data.clips && data.clips.length > 0) {
           // Deduplicate clips by file or identifier
@@ -157,36 +222,36 @@ export default function DashboardPage() {
       refreshCreditsAndUsage();
 
       // Start polling status
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const jobData = await getJobStatus(jobId, token);
-          setCurrentJob(jobData);
-
-          if (jobData.status === "completed") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            const newClips = jobData.clips || [];
-            setGeneratedClips(newClips);
-            setSavedClips((prev) => {
-              const rest = prev.filter(
-                (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
-              );
-              return [...newClips, ...rest];
-            });
-            refreshCreditsAndUsage();
-          } else if (jobData.status === "error") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            setErrorMessage(jobData.error || "We couldn't finish processing this video.");
-            refreshCreditsAndUsage();
-          }
-        } catch (pollErr: any) {
-          console.error("Polling error", pollErr);
-        }
-      }, 1500);
+      startPolling(jobId, token);
     } catch (err: any) {
+      const activeJobId = err.data?.job_id || err.data?.error?.job_id || err.data?.error?.active_job?.job_id;
+      if (err.code === "ACTIVE_JOB_EXISTS" || err.status === 409 || err.message?.includes("active clipping job")) {
+        const token = await getToken();
+        const targetId = activeJobId || (await getActiveJob(token)).job?.job_id;
+        if (targetId) {
+          const fallbackJob = err.data?.job || err.data?.error?.active_job || {
+            job_id: targetId,
+            status: "processing",
+            progress_percent: 15,
+            current_message: "Reconnecting to active clipping job...",
+            steps: {
+              video_received: { label: "Video received & downloading", status: "processing" },
+              audio_extract: { label: "Extracting audio stream", status: "pending" },
+              transcript: { label: "Generating timestamped transcript", status: "pending" },
+              ai_moments: { label: "Finding the best moments with AI", status: "pending" },
+              context_verify: { label: "Reviewing candidate clips & context", status: "pending" },
+              ffmpeg_render: { label: "Rendering & encoding viral clips", status: "pending" },
+              finalizing: { label: "Finalizing metadata & previews", status: "pending" },
+            },
+            clips: [],
+          };
+          setCurrentJob(fallbackJob as any);
+          setIsProcessing(true);
+          startPolling(targetId, token);
+          setErrorMessage(null);
+          return;
+        }
+      }
       setIsProcessing(false);
       if (err.code === "INSUFFICIENT_CREDITS" || err.status === 402) {
         setInsufficientCreditsError({
@@ -222,36 +287,36 @@ export default function DashboardPage() {
       refreshCreditsAndUsage();
 
       // Start polling status
-      if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-
-      pollIntervalRef.current = setInterval(async () => {
-        try {
-          const jobData = await getJobStatus(jobId, token);
-          setCurrentJob(jobData);
-
-          if (jobData.status === "completed") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            const newClips = jobData.clips || [];
-            setGeneratedClips(newClips);
-            setSavedClips((prev) => {
-              const rest = prev.filter(
-                (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
-              );
-              return [...newClips, ...rest];
-            });
-            refreshCreditsAndUsage();
-          } else if (jobData.status === "error") {
-            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            setErrorMessage(jobData.error || "We couldn't finish processing this uploaded video.");
-            refreshCreditsAndUsage();
-          }
-        } catch (pollErr: any) {
-          console.error("Polling error", pollErr);
-        }
-      }, 1500);
+      startPolling(jobId, token);
     } catch (err: any) {
+      const activeJobId = err.data?.job_id || err.data?.error?.job_id || err.data?.error?.active_job?.job_id;
+      if (err.code === "ACTIVE_JOB_EXISTS" || err.status === 409 || err.message?.includes("active clipping job")) {
+        const token = await getToken();
+        const targetId = activeJobId || (await getActiveJob(token)).job?.job_id;
+        if (targetId) {
+          const fallbackJob = err.data?.job || err.data?.error?.active_job || {
+            job_id: targetId,
+            status: "processing",
+            progress_percent: 15,
+            current_message: "Reconnecting to active clipping job...",
+            steps: {
+              video_received: { label: "Video received & downloading", status: "processing" },
+              audio_extract: { label: "Extracting audio stream", status: "pending" },
+              transcript: { label: "Generating timestamped transcript", status: "pending" },
+              ai_moments: { label: "Finding the best moments with AI", status: "pending" },
+              context_verify: { label: "Reviewing candidate clips & context", status: "pending" },
+              ffmpeg_render: { label: "Rendering & encoding viral clips", status: "pending" },
+              finalizing: { label: "Finalizing metadata & previews", status: "pending" },
+            },
+            clips: [],
+          };
+          setCurrentJob(fallbackJob as any);
+          setIsProcessing(true);
+          startPolling(targetId, token);
+          setErrorMessage(null);
+          return;
+        }
+      }
       setIsProcessing(false);
       if (err.code === "INSUFFICIENT_CREDITS" || err.status === 402) {
         setInsufficientCreditsError({
@@ -383,7 +448,11 @@ export default function DashboardPage() {
 
               {/* Live Processing Experience */}
               {isProcessing && currentJob && (
-                <ProcessingProgress job={currentJob} />
+                <ProcessingProgress
+                  job={currentJob}
+                  onCancel={handleCancelJob}
+                  isCanceling={isCanceling}
+                />
               )}
 
               {/* Completed Results Grid */}

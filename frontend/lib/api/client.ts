@@ -208,3 +208,42 @@ export function getClipsZipDownloadUrl(jobId: string, token?: string | null): st
   return `${BASE_URL}/api/clips/download-all/${encodeURIComponent(jobId)}${qs ? `?${qs}` : ""}`;
 }
 
+export async function getActiveJob(
+  token?: string | null
+): Promise<{ has_active_job: boolean; job?: ProcessingJob | null }> {
+  try {
+    const headers: Record<string, string> = {
+      "X-Device-Id": getClientDeviceId(),
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+    const res = await fetch(`${BASE_URL}/api/jobs/active`, { headers });
+    if (!res.ok) return { has_active_job: false, job: null };
+    return await res.json();
+  } catch {
+    return { has_active_job: false, job: null };
+  }
+}
+
+export async function cancelJob(
+  jobId: string,
+  token?: string | null
+): Promise<{ success: boolean; message: string }> {
+  const headers: Record<string, string> = {
+    "X-Device-Id": getClientDeviceId(),
+  };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  const res = await fetch(`${BASE_URL}/api/jobs/cancel/${encodeURIComponent(jobId)}`, {
+    method: "POST",
+    headers,
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new ApiError(data?.detail || "Failed to cancel job", res.status);
+  }
+  return await res.json();
+}
+

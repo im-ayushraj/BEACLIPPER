@@ -6,9 +6,11 @@ import { cn } from "@/lib/utils";
 
 interface ProcessingProgressProps {
   job: ProcessingJob;
+  onCancel?: () => void;
+  isCanceling?: boolean;
 }
 
-export function ProcessingProgress({ job }: ProcessingProgressProps) {
+export function ProcessingProgress({ job, onCancel, isCanceling = false }: ProcessingProgressProps) {
   const isQueued = job.status === "queued";
   const stepsList = [
     { key: "video_received", defaultLabel: "Video received & downloading" },
@@ -69,10 +71,20 @@ export function ProcessingProgress({ job }: ProcessingProgressProps) {
             {job.current_message || "Analyzing media..."}
           </p>
         </div>
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end gap-1.5">
           <span className="font-mono text-xl sm:text-2xl font-semibold text-white">
             {isQueued ? `Pos #${job.queue_position || 1}` : `${job.progress_percent || 10}%`}
           </span>
+          {onCancel && (
+            <button
+              type="button"
+              onClick={onCancel}
+              disabled={isCanceling}
+              className="text-[11px] font-medium text-zinc-400 hover:text-red-400 transition underline underline-offset-2 cursor-pointer disabled:opacity-50"
+            >
+              {isCanceling ? "Canceling..." : "Cancel Job"}
+            </button>
+          )}
         </div>
       </div>
 

@@ -29,7 +29,7 @@ class JobQueueManager:
         """Register the worker callable to execute pipeline tasks: fn(job_id, url, count, user_id)."""
         self._worker_fn = worker_fn
 
-    def check_user_active_job(self, user_id: str) -> Optional[Dict[str, Any]]:
+    def check_user_active_job(self, user_id: str, check_db: bool = False) -> Optional[Dict[str, Any]]:
         """
         Returns the active job if user already has one in 'queued' or 'processing' state.
         (Guest users sharing 'guest_user' are exempted or tracked by IP/session).
@@ -38,11 +38,135 @@ class JobQueueManager:
             return None
 
         with self.lock:
-            for jid in list(self.running_job_ids) + self.queued_job_ids:
+            # Self-healing: prune finished jobs from running_job_ids
+            stale_running = [
+                jid for jid in self.running_job_ids
+                if jid in self.jobs and self.jobs[jid].get("status") not in ("queued", "processing")
+            ]
+            for jid in stale_running:
+                self.running_job_ids.remove(jid)
+
+            for jid in list(self.running_job_ids) + list(self.queued_job_ids):
                 job = self.jobs.get(jid)
                 if job and job.get("user_id") == user_id and job.get("status") in ("queued", "processing"):
                     return job
+
+        if check_db:
+            # Check DB for persistent active jobs with recent heartbeat (< 15 mins)
+            try:
+                from datetime import datetime, timezone, timedelta
+                from clipper.db import get_db_session, ProcessingJobModel
+                session = get_db_session()
+                try:
+                    threshold = datetime.now(timezone.utc) - timedelta(minutes=15)
+                    db_job = session.query(ProcessingJobModel).filter(
+                        ProcessingJobModel.user_id == user_id,
+                        ProcessingJobModel.status.in_(["queued", "processing"]),
+                        ProcessingJobModel.heartbeat_at >= threshold
+                    ).order_by(ProcessingJobModel.created_at.desc()).first()
+                    if db_job:
+                        return {
+                            "job_id": db_job.job_id,
+                            "user_id": db_job.user_id,
+                            "status": db_job.status,
+                            "stage": db_job.stage or "processing",
+                            "progress_percent": db_job.progress_percent or 10,
+                            "current_message": "Processing in progress...",
+                            "created_at": db_job.created_at.timestamp() if db_job.created_at else time.time(),
+                        }
+                finally:
+                    session.close()
+            except Exception:
+                pass
+
         return None
+
+    def cancel_job(self, job_id: str, user_id: str) -> Tuple[bool, str]:
+        """
+        Cancels an active or queued job, clears queue slot, and refunds deducted credits.
+        Returns (success, message).
+        """
+        with self.lock:
+            job = self.jobs.get(job_id)
+            if not job:
+                from clipper.db import get_db_session, ProcessingJobModel
+                from clipper.credit_service import CreditService
+                from datetime import datetime, timezone
+                session = get_db_session()
+                try:
+                    db_job = session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                    if not db_job:
+                        return False, "Job not found."
+                    if db_job.user_id != user_id and user_id != "admin":
+                        return False, "Unauthorized to cancel this job."
+                    if db_job.status in ("completed", "canceled", "error"):
+                        return False, f"Job already {db_job.status}."
+
+                    db_job.status = "canceled"
+                    db_job.error = "Canceled by user."
+                    db_job.completed_at = datetime.now(timezone.utc)
+                    session.commit()
+
+                    if db_job.credits_deducted and db_job.credits_deducted > 0:
+                        try:
+                            CreditService.refund_credits(
+                                user_id=db_job.user_id,
+                                reference_id=job_id,
+                                reason="User canceled processing job"
+                            )
+                        except Exception:
+                            pass
+                    return True, "Job canceled successfully."
+                finally:
+                    session.close()
+
+            job_owner = job.get("user_id")
+            if job_owner != user_id and user_id != "admin":
+                return False, "Unauthorized to cancel this job."
+
+            if job.get("status") in ("completed", "canceled", "error"):
+                return False, f"Job already {job.get('status')}."
+
+            job["status"] = "canceled"
+            job["error"] = "Canceled by user."
+            job["current_message"] = "Job canceled."
+
+            if job_id in self.running_job_ids:
+                self.running_job_ids.remove(job_id)
+            if job_id in self.queued_job_ids:
+                self.queued_job_ids.remove(job_id)
+
+            self.on_job_finished(job_id)
+
+            credits_to_refund = job.get("credits_deducted", 0.0)
+            if credits_to_refund > 0:
+                try:
+                    from clipper.credit_service import CreditService
+                    CreditService.refund_credits(
+                        user_id=job_owner,
+                        reference_id=job_id,
+                        reason="User canceled processing job"
+                    )
+                except Exception as e:
+                    print(f"[QueueManager] Refund warning: {e}")
+
+            try:
+                from clipper.db import get_db_session, ProcessingJobModel
+                from datetime import datetime, timezone
+                s = get_db_session()
+                try:
+                    db_job = s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                    if db_job:
+                        db_job.status = "canceled"
+                        db_job.error = "Canceled by user."
+                        db_job.completed_at = datetime.now(timezone.utc)
+                        s.commit()
+                finally:
+                    s.close()
+            except Exception:
+                pass
+
+            return True, "Job canceled and credits refunded."
 
     def add_job(
         self,

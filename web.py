@@ -1295,9 +1295,19 @@ def process_video(
     # 4. Concurrency Protection: Enforce single active job per user
     active_job = queue_manager.check_user_active_job(user_id)
     if active_job:
-        raise HTTPException(
+        return JSONResponse(
             status_code=429,
-            detail="You already have an active clipping job in progress. Please wait for it to finish or check your live progress."
+            content={
+                "error": {
+                    "code": "ACTIVE_JOB_EXISTS",
+                    "message": "You already have an active clipping job in progress.",
+                    "job_id": active_job.get("job_id"),
+                    "active_job": active_job,
+                },
+                "job_id": active_job.get("job_id"),
+                "status": active_job.get("status", "processing"),
+                "detail": "You already have an active clipping job in progress. Please wait for it to finish or check your live progress.",
+            }
         )
 
     # 5. Preflight check: Probe metadata & enforce 35-minute maximum video duration
@@ -1442,9 +1452,19 @@ async def process_video_upload(
     # 2. Concurrency Protection: Enforce single active job per user
     active_job = queue_manager.check_user_active_job(user_id)
     if active_job:
-        raise HTTPException(
+        return JSONResponse(
             status_code=429,
-            detail="You already have an active clipping job in progress. Please wait for it to finish or check your live progress."
+            content={
+                "error": {
+                    "code": "ACTIVE_JOB_EXISTS",
+                    "message": "You already have an active clipping job in progress.",
+                    "job_id": active_job.get("job_id"),
+                    "active_job": active_job,
+                },
+                "job_id": active_job.get("job_id"),
+                "status": active_job.get("status", "processing"),
+                "detail": "You already have an active clipping job in progress. Please wait for it to finish or check your live progress.",
+            }
         )
 
     # 3. Stream upload file to disk with 500MB size safeguard
@@ -1660,6 +1680,39 @@ def get_status(
             detail="Access denied: You do not have permission to access this job."
         )
     return job
+
+
+@app.get("/api/jobs/active")
+def get_active_job_endpoint(
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    """
+    Returns the user's active processing or queued clipping job (if any).
+    Enables instant reconnection to live progress on page reload or reconnect.
+    """
+    user_id = extract_user_id(authorization, x_device_id)
+    active_job = queue_manager.check_user_active_job(user_id, check_db=True)
+    if active_job:
+        return {"has_active_job": True, "job": active_job}
+    return {"has_active_job": False, "job": None}
+
+
+@app.post("/api/jobs/cancel/{job_id}")
+def cancel_job_endpoint(
+    job_id: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    """
+    Cancels an active or queued clipping job, releases the queue slot,
+    and refunds any deducted credits immediately.
+    """
+    user_id = extract_user_id(authorization, x_device_id)
+    success, msg = queue_manager.cancel_job(job_id=job_id, user_id=user_id)
+    if not success:
+        raise HTTPException(status_code=400, detail=msg)
+    return {"success": True, "message": msg}
 
 
 # ============================================================================

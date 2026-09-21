@@ -31,7 +31,7 @@ export interface VideoMetadata {
 export interface ProcessingJob {
   job_id: string;
   url: string;
-  status: "queued" | "processing" | "completed" | "error";
+  status: "queued" | "processing" | "completed" | "error" | "canceled";
   stage: string;
   current_message: string;
   progress_percent: number;
