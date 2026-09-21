@@ -158,12 +158,11 @@ def format_transcript_for_prompt(segments: List[Dict[str, Any]]) -> str:
 
 
 GEMINI_MODELS = [
-    "gemini-3.5-flash",
-    "gemini-3.6-flash",
+    "gemini-2.5-flash",
+    "gemini-2.0-flash",
+    "gemini-1.5-flash",
     "gemini-flash-latest",
-    "gemini-3-flash-preview",
-    "gemini-flash-lite-latest",
-    "gemini-2.5-flash"
+    "gemini-2.5-flash-lite",
 ]
 
 
@@ -254,19 +253,92 @@ def extract_heuristic_candidate_moments(
     return candidates
 
 
+SAFETY_SETTINGS = [
+    {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+    {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+]
+
+
+def soften_transcript_prompt(prompt_text: str) -> str:
+    """Mask extreme slurs or explicit vulgarities that trip API input safety filters on raw creator podcasts."""
+    return re.sub(
+        r"\b(fuck|fucking|fucker|motherfucker|shit|bitch|asshole|cunt|dick|chutiya|bhosdike|gaand|madarchod|behenchod|randi|lodu|choot)\b",
+        "[bleep]",
+        prompt_text,
+        flags=re.IGNORECASE
+    )
+
+
+def extract_gemini_response_text(response: Any) -> str:
+    """Safely extract text from Gemini response without throwing accessor errors on partial filter."""
+    try:
+        if hasattr(response, "text") and response.text:
+            return response.text
+    except Exception:
+        pass
+    try:
+        if hasattr(response, "candidates") and response.candidates:
+            for cand in response.candidates:
+                if hasattr(cand, "content") and cand.content and cand.content.parts:
+                    t = "".join(getattr(p, "text", "") for p in cand.content.parts if hasattr(p, "text"))
+                    if t.strip():
+                        return t
+    except Exception:
+        pass
+    return ""
+
+
+GROQ_MODELS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.8-27b",
+    "groq/compound",
+]
+
+
 def query_llm(
     prompt: str,
     gemini_key: Optional[str] = None,
     openai_key: Optional[str] = None,
+    groq_key: Optional[str] = None,
     metrics_collector: Optional[Dict[str, Any]] = None
 ) -> str:
-    """Send prompt to available LLM provider with multi-model cascade and rate-limit retry."""
+    """Send prompt to available LLM provider with Groq high-speed priority, Gemini cascade, and rate-limit retry."""
+    gr_key = groq_key or os.getenv("GROQ_API_KEY")
     g_key = gemini_key or os.getenv("GEMINI_API_KEY")
     o_key = openai_key or os.getenv("OPENAI_API_KEY")
 
     if metrics_collector is not None:
         metrics_collector["llm_calls"] = metrics_collector.get("llm_calls", 0) + 1
 
+    # 1. Groq Ultra-fast LPU inference (sub-second response, podcast-friendly)
+    if gr_key:
+        try:
+            from groq import Groq
+            groq_client = Groq(api_key=gr_key)
+            for model_name in GROQ_MODELS:
+                try:
+                    response = groq_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt}
+                        ],
+                        temperature=0.3,
+                    )
+                    content = response.choices[0].message.content
+                    if content and content.strip():
+                        print(f"[AI Analyzer] Successfully analyzed transcript via Groq ({model_name}) in sub-second time.")
+                        return content
+                except Exception as gr_err:
+                    print(f"[AI Analyzer] Groq ({model_name}) notice: {gr_err}")
+                    continue
+        except Exception as e:
+            print(f"[AI Analyzer] Groq integration warning: {e}")
+
+    # 2. Google Gemini with BLOCK_NONE safety settings & prompt softening
     if g_key:
         try:
             import google.generativeai as genai
@@ -281,15 +353,29 @@ def query_llm(
                             model_name=model_name,
                             system_instruction=SYSTEM_PROMPT
                         )
+                        active_prompt = prompt if attempt == 0 else soften_transcript_prompt(prompt)
                         response = model.generate_content(
-                            prompt,
-                            generation_config={"temperature": 0.3}
+                            active_prompt,
+                            generation_config={"temperature": 0.3},
+                            safety_settings=SAFETY_SETTINGS
                         )
-                        if response.text and response.text.strip():
-                            return response.text
+                        res_text = extract_gemini_response_text(response)
+                        if res_text and res_text.strip():
+                            return res_text
+                        
+                        # Check prompt feedback for blocked content
+                        feedback = getattr(response, "prompt_feedback", None)
+                        if feedback and getattr(feedback, "block_reason", None):
+                            print(f"[AI Analyzer] Prompt blocked by Gemini safety ({feedback.block_reason}). Retrying with sanitized prompt...")
+                            continue
                     except Exception as e:
                         err_str = str(e).lower()
-                        if "429" in err_str or "quota" in err_str or "resourceexhausted" in err_str:
+                        if "prohibited_content" in err_str or "block_reason" in err_str or "empty" in err_str:
+                            if attempt == 0:
+                                print(f"[AI Analyzer] Model {model_name} filtered raw transcript. Retrying with softened prompt...")
+                                continue
+                            break
+                        elif "429" in err_str or "quota" in err_str or "resourceexhausted" in err_str:
                             if attempt == 0:
                                 time.sleep(2.0)
                                 continue
@@ -303,6 +389,7 @@ def query_llm(
         except Exception as e:
             print(f"[AI Analyzer] Gemini cascade warning: {e}")
 
+    # 3. OpenAI GPT-4o-mini Fallback
     if o_key:
         try:
             from openai import OpenAI
@@ -327,6 +414,7 @@ def analyze_transcript_window(
     target_count: int = 3,
     gemini_key: Optional[str] = None,
     openai_key: Optional[str] = None,
+    groq_key: Optional[str] = None,
     metrics_collector: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """Analyze a single segment window for top standalone moments."""
@@ -341,7 +429,7 @@ def analyze_transcript_window(
         "Include title, tags, explanation, score, reason, start, and end. "
         "Return STRICT JSON array only."
     )
-    raw_response = query_llm(prompt, gemini_key, openai_key, metrics_collector=metrics_collector)
+    raw_response = query_llm(prompt, gemini_key, openai_key, groq_key=groq_key, metrics_collector=metrics_collector)
     return clean_and_parse_json(raw_response)
 
 
@@ -349,14 +437,15 @@ def find_important_moments(
     segments: List[Dict[str, Any]],
     gemini_key: Optional[str] = None,
     openai_key: Optional[str] = None,
+    groq_key: Optional[str] = None,
     target_clip_count: int = 10,
     progress_callback: Optional[Callable[[str], None]] = None,
     metrics_collector: Optional[Dict[str, Any]] = None
 ) -> List[Dict[str, Any]]:
     """
     Analyze whole video transcript across the entire timeline.
-    Supports single-pass analysis for short videos, batch window scanning for longer videos,
-    and automatic fallback to heuristic algorithmic extraction if AI quotas are exhausted.
+    Supports ultra-fast Groq LPU inference, Gemini cascade, single-pass analysis for short videos,
+    batch window scanning for longer videos, and automatic fallback to heuristic algorithmic extraction.
     """
     if not segments:
         raise AIAnalysisError("Cannot analyze empty transcript segments")
@@ -368,18 +457,20 @@ def find_important_moments(
     # If duration is 15 minutes or less, analyze directly in a single comprehensive pass
     if total_duration <= 900.0:
         if progress_callback:
-            progress_callback("Analyzing full transcript for viral moments...")
+            progress_callback("AI scanning full transcript for viral moments...")
         transcript_text = format_transcript_for_prompt(segments)
+        max_possible_clips = max(1, int(total_duration / 30.0))
+        requested_count = min(max_possible_clips, max(3, target_clip_count + 2))
         prompt = (
             "Here is the timestamped transcript of the video:\n\n"
             f"{transcript_text}\n\n"
-            f"Identify the top {max(12, target_clip_count + 4)} best standalone moments (30 to 60 seconds each) "
+            f"Identify the top {requested_count} best standalone moments (30 to 60 seconds each) "
             "spread across the entire video. "
             "For each clip provide title, tags, explanation, score, reason, start, and end. "
             "Return STRICT JSON array only."
         )
         try:
-            raw_response = query_llm(prompt, gemini_key, openai_key, metrics_collector=metrics_collector)
+            raw_response = query_llm(prompt, gemini_key, openai_key, groq_key=groq_key, metrics_collector=metrics_collector)
             candidates = clean_and_parse_json(raw_response)
             if candidates:
                 return candidates
@@ -422,6 +513,7 @@ def find_important_moments(
                 target_count=cands_per_window,
                 gemini_key=gemini_key,
                 openai_key=openai_key,
+                groq_key=groq_key,
                 metrics_collector=metrics_collector
             )
             all_candidates.extend(window_candidates)

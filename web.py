@@ -222,16 +222,25 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         for k in job["steps"]:
             job["steps"][k]["status"] = "completed"
 
-        # 1. Cloud upload to Supabase if enabled
+        # 1. Cloud upload to Supabase if enabled (concurrent multi-threaded uploads)
         if is_supabase_enabled():
-            for c in result.get("clips", []):
+            from concurrent.futures import ThreadPoolExecutor
+            all_clips = result.get("clips", [])
+
+            def _upload_clip_worker(c: dict) -> dict:
                 clip_file = OUTPUT_DIR / c.get("file", "")
                 if clip_file.exists():
                     signed_url = upload_clip_to_storage(clip_file, user_id, c.get("file", ""))
                     if signed_url:
                         c["url"] = signed_url
+                return c
+
+            if all_clips:
+                with ThreadPoolExecutor(max_workers=min(4, len(all_clips))) as uploader:
+                    list(uploader.map(_upload_clip_worker, all_clips))
+
             try:
-                save_clips_to_db(user_id, job_id, result.get("clips", []), result.get("video"))
+                save_clips_to_db(user_id, job_id, all_clips, result.get("video"))
             except Exception as e:
                 print(f"[Supabase] DB save warning: {e}")
 

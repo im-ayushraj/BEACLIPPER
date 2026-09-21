@@ -24,11 +24,13 @@ class ClipperPipeline:
         output_dir: str | Path = "output",
         gemini_api_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
+        groq_api_key: Optional[str] = None,
     ):
         self.working_dir = Path(working_dir)
         self.output_dir = Path(output_dir)
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+        self.groq_api_key = groq_api_key or os.getenv("GROQ_API_KEY")
 
         self.working_dir.mkdir(parents=True, exist_ok=True)
         self.output_dir.mkdir(parents=True, exist_ok=True)
@@ -98,7 +100,9 @@ class ClipperPipeline:
                 video_id=video_info["id"],
                 audio_path=video_info["audio_path"],
                 gemini_api_key=self.gemini_api_key,
+                groq_api_key=self.groq_api_key,
                 is_local_file=video_info.get("is_local_file", False),
+                video_path=video_info.get("video_path"),
             )
             segments = transcript_data["segments"]
             metrics["transcription_seconds"] = round(time.time() - t_start, 2)
@@ -111,6 +115,7 @@ class ClipperPipeline:
             segments=segments,
             gemini_key=self.gemini_api_key,
             openai_key=self.openai_api_key,
+            groq_key=self.groq_api_key,
             target_clip_count=target_clip_count,
             progress_callback=lambda msg: notify("analysis", msg),
             metrics_collector=metrics
@@ -150,12 +155,13 @@ class ClipperPipeline:
 
         notify("analysis_done", f"Selected {len(top_candidates)} optimal clips with full titles, tags & explanations.")
 
-        # 6. FFmpeg creates clips and clips.json
-        notify("clips", f"Generating {len(top_candidates)} video clips using FFmpeg...")
+        # 6. FFmpeg creates clips and clips.json using stream-copy & parallel processing
+        notify("clips", f"Generating {len(top_candidates)} video clips using high-speed FFmpeg...")
         clips_result = generate_clips(
             video_path=video_info["video_path"],
             clips_data=top_candidates,
-            output_dir=self.output_dir
+            output_dir=self.output_dir,
+            progress_callback=lambda done, total: notify("clips", f"Cut {done}/{total} clips via fast stream copy...")
         )
         notify("clips_done", f"Generated {len(clips_result['clips'])} clips in {self.output_dir}.")
 

@@ -102,6 +102,37 @@ def fetch_youtube_transcript(video_id: str) -> List[Dict[str, Any]]:
     return segments
 
 
+def transcribe_audio_groq(audio_path: str, api_key: str) -> List[Dict[str, Any]]:
+    """
+    Ultra-fast audio transcription using Groq Whisper Large V3 Turbo.
+    Processes audio at ~200x realtime speed (20m audio transcribes in ~3 seconds).
+    """
+    from groq import Groq
+
+    client = Groq(api_key=api_key)
+    with open(audio_path, "rb") as f:
+        res = client.audio.transcriptions.create(
+            file=f,
+            model="whisper-large-v3-turbo",
+            response_format="verbose_json"
+        )
+
+    segments: List[Dict[str, Any]] = []
+    raw_segs = getattr(res, "segments", []) or []
+    for s in raw_segs:
+        start = round(float(s.get("start", 0.0)), 2)
+        end = round(float(s.get("end", start + 1.0)), 2)
+        text = str(s.get("text", "")).strip()
+        if text:
+            segments.append({
+                "start": start,
+                "end": max(end, round(start + 0.5, 2)),
+                "text": text,
+            })
+
+    return segments
+
+
 def transcribe_audio_gemini(audio_path: str, api_key: str) -> List[Dict[str, Any]]:
     """
     Audio transcription using Gemini multimodal capabilities with model fallbacks.
@@ -129,13 +160,33 @@ def transcribe_audio_gemini(audio_path: str, api_key: str) -> List[Dict[str, Any
         "Ensure timestamps accurately align with spoken words."
     )
 
+    SAFETY_SETTINGS = [
+        {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+        {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+    ]
+
     last_err = None
     try:
         for model_name in models_to_try:
             try:
                 model = genai.GenerativeModel(model_name)
-                response = model.generate_content([prompt, audio_file])
-                parsed = parse_json_safely(response.text)
+                response = model.generate_content([prompt, audio_file], safety_settings=SAFETY_SETTINGS)
+                res_text = ""
+                try:
+                    if hasattr(response, "text") and response.text:
+                        res_text = response.text
+                except Exception:
+                    pass
+                if not res_text and hasattr(response, "candidates") and response.candidates:
+                    for cand in response.candidates:
+                        if hasattr(cand, "content") and cand.content and cand.content.parts:
+                            res_text = "".join(getattr(p, "text", "") for p in cand.content.parts if hasattr(p, "text"))
+                            if res_text:
+                                break
+
+                parsed = parse_json_safely(res_text)
                 raw_segments = parsed.get("segments", [])
                 segments = []
                 for s in raw_segments:
@@ -163,10 +214,14 @@ def get_transcript(
     video_id: str,
     audio_path: Optional[str] = None,
     gemini_api_key: Optional[str] = None,
+    groq_api_key: Optional[str] = None,
     is_local_file: bool = False,
+    video_path: Optional[str] = None,
 ) -> Dict[str, List[Dict[str, Any]]]:
     """
     Retrieve timestamped transcript for a video (YouTube or local file).
+    Attempts instant caption retrieval first; lazily extracts audio and uses
+    ultra-fast Groq Whisper or Gemini fallback if captions are unavailable.
     Returns:
         {
             "segments": [
@@ -174,16 +229,36 @@ def get_transcript(
             ]
         }
     """
-    # 1. For YouTube videos, try captions first (fast and free)
+    # 1. For YouTube videos, try captions first (fast and free ~0.5s)
     if not is_local_file and video_id and not video_id.startswith("upload_"):
         try:
             segments = fetch_youtube_transcript(video_id)
             if segments:
                 return {"segments": segments}
         except Exception as e:
-            print(f"[Transcriber] YouTube caption fetch failed: {e}")
+            print(f"[Transcriber] YouTube caption fetch failed: {e}. Falling back to audio STT...")
 
-    # 2. Transcribe audio using Gemini multimodal STT
+    # 2. If audio file does not exist yet but video_path is provided, extract audio on demand now
+    if audio_path and not os.path.exists(audio_path) and video_path and os.path.exists(video_path):
+        from clipper.downloader import extract_audio
+        print(f"[Transcriber] Extracting audio on demand from {video_path}...")
+        try:
+            extract_audio(video_path, audio_path)
+        except Exception as ex_err:
+            print(f"[Transcriber] Lazy audio extraction error: {ex_err}")
+
+    # 3. Transcribe audio using Groq Whisper Large V3 Turbo (Ultra-fast, ~1-3s)
+    groq_key = groq_api_key or os.getenv("GROQ_API_KEY")
+    if audio_path and os.path.exists(audio_path) and groq_key:
+        print(f"[Transcriber] Using Groq Whisper Large V3 Turbo STT for {audio_path}...")
+        try:
+            segments = transcribe_audio_groq(audio_path, groq_key)
+            if segments:
+                return {"segments": segments}
+        except Exception as gr_err:
+            print(f"[Transcriber] Groq Whisper error: {gr_err}. Falling back to Gemini STT...")
+
+    # 4. Transcribe audio using Gemini multimodal STT
     key = gemini_api_key or os.getenv("GEMINI_API_KEY")
     if audio_path and os.path.exists(audio_path) and key:
         print(f"[Transcriber] Using Gemini audio speech-to-text for {audio_path}...")

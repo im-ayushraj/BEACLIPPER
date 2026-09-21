@@ -149,9 +149,11 @@ def execute_job(job_info: dict):
         video_metadata = result.get("video", {})
         title = video_metadata.get("title", "Untitled Video")
 
-        # Upload clips to Cloud Object Storage if enabled
-        uploaded_clips = []
-        for clip in clips:
+        # Upload clips to Cloud Object Storage if enabled (concurrently)
+        uploaded_clips = list(clips)
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _upload_worker_clip(clip: dict) -> dict:
             local_path = clip.get("file_path")
             if local_path and os.path.exists(local_path):
                 clip_filename = os.path.basename(local_path)
@@ -162,7 +164,11 @@ def execute_job(job_info: dict):
                     clip_name=clip_filename
                 )
                 clip["download_url"] = cloud_url
-            uploaded_clips.append(clip)
+            return clip
+
+        if uploaded_clips:
+            with ThreadPoolExecutor(max_workers=min(4, len(uploaded_clips))) as uploader:
+                list(uploader.map(_upload_worker_clip, uploaded_clips))
 
         # Save to DB
         save_clips_to_db(user_id=user_id, job_id=job_id, clips=uploaded_clips, video_info=video_metadata)

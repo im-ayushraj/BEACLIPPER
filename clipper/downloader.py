@@ -182,10 +182,8 @@ def download_video(
             raise
         raise VideoDownloadError(f"Unexpected error during download: {str(e)}") from e
 
-    # Extract audio file for possible transcription fallback
+    # Prepare audio path reference for lazy on-demand extraction if transcription fallback is needed
     audio_file = output_path / f"{video_id}.mp3"
-    if not audio_file.exists():
-        extract_audio(str(video_file), str(audio_file))
 
     return {
         "id": video_id,
