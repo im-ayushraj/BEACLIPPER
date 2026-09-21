@@ -16,7 +16,8 @@ export function ClipCard({ clip, index }: ClipCardProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Backend video URL path: cloud signed URL or local FastAPI mount
-  const videoSrc = (clip as any).url || `/output/${clip.file}`;
+  const rawUrl = (clip as any).url || (clip as any).signed_url || (clip as any).download_url;
+  const videoSrc = rawUrl || (clip.file ? `/output/${clip.file}` : "");
 
   const togglePlay = () => {
     if (!videoRef.current) return;
@@ -113,7 +114,9 @@ export function ClipCard({ clip, index }: ClipCardProps) {
           {/* Working Direct Download Button */}
           <a
             href={videoSrc}
-            download={clip.file}
+            download={clip.file || `clip_${clipNumber}.mp4`}
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98]"
           >
             <Download className="h-3.5 w-3.5" />

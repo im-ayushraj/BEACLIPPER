@@ -182,15 +182,16 @@ def upload_clip_to_storage(
     file_path: Path | str,
     user_id: str,
     clip_name: str,
+    job_id: Optional[str] = None,
     expires_in: int = 86400,
-    cleanup_local: bool = True
+    cleanup_local: bool = False
 ) -> Optional[str]:
     """
     Decoupled Cloud Upload Dispatcher:
     1. If AWS S3 or Cloudflare R2 is configured: uploads and returns presigned S3/R2 URL.
     2. Else if Supabase Storage is configured: uploads to Supabase and returns signed URL.
     3. Else fallback to local media URL.
-    Automatically deletes local file after successful cloud upload so nothing remains on local disk.
+    Preserves local files by default so local fallback `/output/{clip_name}` remains valid.
     """
     p = Path(file_path)
     if not p.exists():
@@ -200,20 +201,23 @@ def upload_clip_to_storage(
 
     # 1. Check S3 / Cloudflare R2
     if s3_storage.is_configured():
-        success = s3_storage.upload_file(p, storage_path, content_type="video/mp4")
-        if success:
-            signed_url = s3_storage.generate_presigned_download_url(
-                object_key=storage_path,
-                expires_in=expires_in,
-                filename=clip_name
-            )
-            if signed_url:
-                if cleanup_local and p.exists():
-                    try:
-                        p.unlink(missing_ok=True)
-                    except Exception:
-                        pass
-                return signed_url
+        try:
+            success = s3_storage.upload_file(p, storage_path, content_type="video/mp4")
+            if success:
+                signed_url = s3_storage.generate_presigned_download_url(
+                    object_key=storage_path,
+                    expires_in=expires_in,
+                    filename=clip_name
+                )
+                if signed_url:
+                    if cleanup_local and p.exists():
+                        try:
+                            p.unlink(missing_ok=True)
+                        except Exception:
+                            pass
+                    return signed_url
+        except Exception as e:
+            print(f"[S3/R2 Storage] Error uploading {clip_name}: {e}")
 
     # 2. Check Supabase Storage
     client = get_supabase_client()
@@ -240,10 +244,10 @@ def upload_clip_to_storage(
                         pass
                 return signed_url
         except Exception as e:
-            print(f"[Supabase Storage] Error uploading {clip_name}: {e}")
+            print(f"[Supabase Storage] Notice for {clip_name}: {e}")
 
     # 3. Fallback to local URL path
-    return f"/output/users/{user_id}/{clip_name}"
+    return f"/output/{clip_name}"
 
 
 def save_job_to_cloud(

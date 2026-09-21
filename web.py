@@ -214,35 +214,45 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             target_clip_count=count,
             status_callback=status_callback
         )
-        job["status"] = "completed"
-        job["clips"] = result["clips"]
-        job["video"] = result["video"]
-        job["progress_percent"] = 100
-        job["current_message"] = f"Successfully generated {len(result['clips'])} clips."
-        for k in job["steps"]:
-            job["steps"][k]["status"] = "completed"
+        all_clips = result.get("clips", [])
 
-        # 1. Cloud upload to Supabase if enabled (concurrent multi-threaded uploads)
+        # 1. Cloud upload to Supabase / S3 if enabled BEFORE marking status as completed
         if is_supabase_enabled():
-            from concurrent.futures import ThreadPoolExecutor
-            all_clips = result.get("clips", [])
-
-            def _upload_clip_worker(c: dict) -> dict:
+            for c in all_clips:
                 clip_file = OUTPUT_DIR / c.get("file", "")
                 if clip_file.exists():
-                    signed_url = upload_clip_to_storage(clip_file, user_id, c.get("file", ""))
-                    if signed_url:
-                        c["url"] = signed_url
-                return c
-
-            if all_clips:
-                with ThreadPoolExecutor(max_workers=min(4, len(all_clips))) as uploader:
-                    list(uploader.map(_upload_clip_worker, all_clips))
+                    try:
+                        signed_url = upload_clip_to_storage(
+                            file_path=clip_file,
+                            user_id=user_id,
+                            clip_name=c.get("file", ""),
+                            job_id=job_id,
+                            cleanup_local=False
+                        )
+                        if signed_url:
+                            c["url"] = signed_url
+                            c["signed_url"] = signed_url
+                    except Exception as e:
+                        print(f"[Supabase Storage] Notice: {e}")
 
             try:
                 save_clips_to_db(user_id, job_id, all_clips, result.get("video"))
             except Exception as e:
                 print(f"[Supabase] DB save warning: {e}")
+
+        # 2. Guarantee every clip has a valid playable URL
+        for c in all_clips:
+            if not c.get("url"):
+                c["url"] = f"/output/{c.get('file', '')}"
+
+        # 3. Mark job as completed with fully populated URLs
+        job["status"] = "completed"
+        job["clips"] = all_clips
+        job["video"] = result.get("video", {})
+        job["progress_percent"] = 100
+        job["current_message"] = f"Successfully generated {len(all_clips)} clips."
+        for k in job["steps"]:
+            job["steps"][k]["status"] = "completed"
 
         # 2. Record Job & Usage in Persistence DB
         try:

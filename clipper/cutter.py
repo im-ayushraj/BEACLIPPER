@@ -54,18 +54,25 @@ def cut_single_clip(
 
     # 2. Check if output exists and is valid; if not, fallback to ultrafast re-encoding
     if proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
+        if out_file.exists():
+            try:
+                out_file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
         encode_cmd = [
             ffmpeg_bin,
             "-y",
-            "-ss", str(start),
+            "-ss", f"{max(0.0, float(start)):.3f}",
             "-i", video_path,
-            "-t", str(duration),
+            "-t", f"{max(0.5, float(duration)):.3f}",
             "-c:v", "libx264",
             "-preset", "ultrafast",
             "-crf", "23",
             "-c:a", "aac",
             "-b:a", "128k",
             "-avoid_negative_ts", "make_zero",
+            "-fflags", "+genpts",
             "-movflags", "+faststart",
             output_path
         ]
@@ -78,7 +85,7 @@ def cut_single_clip(
             errors="replace"
         )
 
-        if fallback_proc.returncode != 0 or not out_file.exists():
+        if fallback_proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
             stderr_msg = fallback_proc.stderr or proc.stderr
             raise VideoCuttingError(f"FFmpeg failed to create clip at {output_path}: {stderr_msg[:300]}")
 

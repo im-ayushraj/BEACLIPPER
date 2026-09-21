@@ -103,7 +103,7 @@ def normalize_candidate(cand: Dict[str, Any], transcript_fallback: str = "") -> 
 
 
 def clean_and_parse_json(raw_text: str) -> List[Dict[str, Any]]:
-    """Robustly parse JSON response from LLM."""
+    """Robustly parse JSON response from LLM with multi-tier recovery."""
     cleaned = raw_text.strip()
 
     # Strip markdown fences if present
@@ -113,9 +113,13 @@ def clean_and_parse_json(raw_text: str) -> List[Dict[str, Any]]:
 
     parsed_list: List[Dict[str, Any]] = []
 
-    # Try direct parse
+    # Helper to clean trailing commas
+    def _sanitize_json(s: str) -> str:
+        return re.sub(r",\s*([\]\}])", r"\1", s)
+
+    # 1. Try direct parse
     try:
-        data = json.loads(cleaned)
+        data = json.loads(_sanitize_json(cleaned))
         if isinstance(data, list):
             parsed_list = data
         elif isinstance(data, dict):
@@ -123,22 +127,48 @@ def clean_and_parse_json(raw_text: str) -> List[Dict[str, Any]]:
                 if isinstance(val, list):
                     parsed_list = val
                     break
-    except json.JSONDecodeError:
+    except Exception:
         pass
 
-    # Fallback: extract array substring [...]
+    # 2. Fallback: extract array substring [...]
     if not parsed_list:
         array_match = re.search(r"\[\s*\{[\s\S]*\}\s*\]", cleaned)
         if array_match:
             try:
-                data = json.loads(array_match.group(0))
+                data = json.loads(_sanitize_json(array_match.group(0)))
                 if isinstance(data, list):
                     parsed_list = data
-            except json.JSONDecodeError:
+            except Exception:
                 pass
 
+    # 3. Fallback: Repair truncated array [ ... { ... }
+    if not parsed_list and "[" in cleaned:
+        start_idx = cleaned.find("[")
+        sub = cleaned[start_idx:]
+        last_brace = sub.rfind("}")
+        if last_brace != -1:
+            candidate = sub[:last_brace + 1] + "]"
+            try:
+                data = json.loads(_sanitize_json(candidate))
+                if isinstance(data, list):
+                    parsed_list = data
+            except Exception:
+                pass
+
+    # 4. Fallback: Extract individual JSON candidate objects { ... }
     if not parsed_list:
-        raise AIAnalysisError(f"Failed to parse LLM response as JSON: {raw_text[:300]}...")
+        obj_matches = re.finditer(r"\{[^{}]*\"start\"\s*:[^{}]*\"end\"\s*:[^{}]*\}", cleaned)
+        for m in obj_matches:
+            try:
+                obj = json.loads(_sanitize_json(m.group(0)))
+                if isinstance(obj, dict) and "start" in obj and "end" in obj:
+                    parsed_list.append(obj)
+            except Exception:
+                continue
+
+    if not parsed_list:
+        safe_preview = raw_text[:300].encode("ascii", errors="replace").decode("ascii")
+        raise AIAnalysisError(f"Failed to parse LLM response as JSON: {safe_preview}...")
 
     # Normalize all items
     normalized = []
@@ -475,7 +505,8 @@ def find_important_moments(
             if candidates:
                 return candidates
         except Exception as e:
-            print(f"[AI Analyzer] Single-pass LLM query failed: {e}. Falling back to Heuristic Extractor.")
+            safe_e = str(e).encode("ascii", errors="replace").decode("ascii")
+            print(f"[AI Analyzer] Single-pass LLM query notice: {safe_e}. Falling back to Heuristic Extractor.")
 
         if progress_callback:
             progress_callback("Using intelligent transcript analysis to extract standalone moments...")
