@@ -9,9 +9,10 @@ import { Search, Film } from "lucide-react";
 interface MyClipsProps {
   clips: Clip[];
   onNewClip: () => void;
+  onDeleteClip?: (clip: Clip) => void;
 }
 
-export function MyClips({ clips, onNewClip }: MyClipsProps) {
+export function MyClips({ clips, onNewClip, onDeleteClip }: MyClipsProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredClips = clips.filter((clip) => {
@@ -63,7 +64,7 @@ export function MyClips({ clips, onNewClip }: MyClipsProps) {
           No clips match your search "{searchQuery}".
         </div>
       ) : (
-        <ClipGrid clips={filteredClips} onReset={onNewClip} />
+        <ClipGrid clips={filteredClips} onReset={onNewClip} onDeleteClip={onDeleteClip} />
       )}
     </div>
   );

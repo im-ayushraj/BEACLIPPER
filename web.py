@@ -14,7 +14,7 @@ from typing import Dict, Any, Optional
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Header, UploadFile, File, Form, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 from dotenv import load_dotenv
 
@@ -1021,6 +1021,111 @@ def get_saved_clips(
                 print(f"[Storage] Error reading clips.json: {e}")
 
     return {"clips": [], "count": 0, "user_id": user_id, "source": "empty"}
+
+
+@app.get("/api/download")
+def download_clip_file(
+    file: Optional[str] = None,
+    url: Optional[str] = None,
+    name: Optional[str] = None
+):
+    """
+    Direct download endpoint enforcing Content-Disposition: attachment
+    so browser triggers native download instead of opening a player tab.
+    """
+    download_filename = name or file or "clip.mp4"
+    if not download_filename.endswith(".mp4"):
+        download_filename += ".mp4"
+
+    # 1. Check local file in OUTPUT_DIR
+    if file:
+        clean_name = os.path.basename(file)
+        local_path = OUTPUT_DIR / clean_name
+        if local_path.exists():
+            return FileResponse(
+                path=str(local_path),
+                filename=download_filename,
+                media_type="video/mp4",
+                headers={"Content-Disposition": f'attachment; filename="{download_filename}"'}
+            )
+        for u_dir in (OUTPUT_DIR / "users").glob("*"):
+            u_file = u_dir / clean_name
+            if u_file.exists():
+                return FileResponse(
+                    path=str(u_file),
+                    filename=download_filename,
+                    media_type="video/mp4",
+                    headers={"Content-Disposition": f'attachment; filename="{download_filename}"'}
+                )
+
+    # 2. If remote cloud URL provided, proxy stream it with attachment header
+    if url and (url.startswith("http://") or url.startswith("https://")):
+        import requests
+        try:
+            req = requests.get(url, stream=True, timeout=20)
+            if req.status_code in (200, 206):
+                return StreamingResponse(
+                    req.iter_content(chunk_size=65536),
+                    media_type="video/mp4",
+                    headers={"Content-Disposition": f'attachment; filename="{download_filename}"'}
+                )
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to stream clip: {e}")
+
+    raise HTTPException(status_code=404, detail="Clip file not found for download.")
+
+
+@app.delete("/api/clips/{clip_identifier}")
+def delete_clip_endpoint(
+    clip_identifier: str,
+    authorization: Optional[str] = Header(None),
+    x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
+):
+    """Delete clip from persistence database, cloud storage, and local disk."""
+    user_id = extract_user_id(authorization, x_device_id)
+    session = get_db_session()
+    deleted = False
+    try:
+        clip_rec = None
+        if clip_identifier.isdigit():
+            clip_rec = session.query(ClipModel).filter_by(id=int(clip_identifier)).first()
+        if not clip_rec:
+            clip_rec = session.query(ClipModel).filter(
+                (ClipModel.file_name == clip_identifier) | (ClipModel.file_name == f"{clip_identifier}.mp4")
+            ).first()
+
+        if clip_rec:
+            if clip_rec.storage_path:
+                try:
+                    if s3_storage.is_configured():
+                        s3_storage.delete_file(clip_rec.storage_path)
+                    elif is_supabase_enabled():
+                        client = get_supabase_client()
+                        if client:
+                            client.storage.from_(STORAGE_BUCKET).remove([clip_rec.storage_path])
+                except Exception as e:
+                    print(f"[Delete] Cloud storage removal notice: {e}")
+
+            file_name = clip_rec.file_name
+            session.delete(clip_rec)
+            session.commit()
+            deleted = True
+        else:
+            file_name = os.path.basename(clip_identifier)
+
+        local_p = OUTPUT_DIR / file_name
+        if local_p.exists():
+            local_p.unlink(missing_ok=True)
+            deleted = True
+        for u_dir in (OUTPUT_DIR / "users").glob("*"):
+            u_p = u_dir / file_name
+            if u_p.exists():
+                u_p.unlink(missing_ok=True)
+                deleted = True
+
+        return {"success": True, "deleted": deleted, "clip": clip_identifier}
+    finally:
+        session.close()
 
 
 @app.post("/api/process")

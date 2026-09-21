@@ -1,18 +1,20 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Download, Play, Pause, Share2, Check, Sparkles, Clock, Tag } from "lucide-react";
+import { Download, Play, Pause, Trash2, Loader2, Sparkles, Clock, Tag } from "lucide-react";
 import { Clip } from "@/types";
 import { formatTime } from "@/lib/utils";
 
 interface ClipCardProps {
   clip: Clip;
   index: number;
+  onDelete?: (clip: Clip) => void;
 }
 
-export function ClipCard({ clip, index }: ClipCardProps) {
+export function ClipCard({ clip, index, onDelete }: ClipCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Backend video URL path: cloud signed URL or local FastAPI mount
@@ -30,14 +32,51 @@ export function ClipCard({ clip, index }: ClipCardProps) {
     }
   };
 
-  const handleCopy = () => {
-    const text = `${clip.title}\n${clip.explanation}\n${clip.tags.join(" ")}`;
-    navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const clipNumber = String(index + 1).padStart(2, "0");
+
+  const handleDownload = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (isDownloading) return;
+    setIsDownloading(true);
+
+    const filename = clip.file || `clip_${clipNumber}.mp4`;
+
+    try {
+      // 1. Fetch file as blob to force native browser download dialog without opening tab
+      const res = await fetch(videoSrc);
+      if (!res.ok) throw new Error("Fetch blob failed");
+      const blob = await res.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      window.URL.revokeObjectURL(blobUrl);
+      document.body.removeChild(link);
+    } catch (err) {
+      // 2. Fallback to backend /api/download attachment proxy
+      const downloadUrl = `/api/download?file=${encodeURIComponent(clip.file || "")}&url=${encodeURIComponent(videoSrc)}&name=${encodeURIComponent(filename)}`;
+      const link = document.createElement("a");
+      link.href = downloadUrl;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
-  const clipNumber = String(index + 1).padStart(2, "0");
+  const handleDelete = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (isDeleting) return;
+    if (onDelete) {
+      setIsDeleting(true);
+      onDelete(clip);
+    }
+  };
 
   return (
     <div className="group rounded-xl border border-white/[0.08] bg-[#111319] overflow-hidden flex flex-col transition hover:border-white/[0.16]">
@@ -111,25 +150,39 @@ export function ClipCard({ clip, index }: ClipCardProps) {
 
         {/* Actions Row */}
         <div className="mt-auto pt-3 border-t border-white/[0.06] flex items-center gap-2">
-          {/* Working Direct Download Button */}
-          <a
-            href={videoSrc}
-            download={clip.file || `clip_${clipNumber}.mp4`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98]"
-          >
-            <Download className="h-3.5 w-3.5" />
-            <span>Download</span>
-          </a>
-
-          {/* Copy info button */}
+          {/* Working Direct Download Button (triggers native download dialog, no new tab) */}
           <button
-            onClick={handleCopy}
-            title="Copy title and tags"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-zinc-300 transition hover:bg-white/[0.08] hover:text-white"
+            type="button"
+            onClick={handleDownload}
+            disabled={isDownloading}
+            className="flex-1 flex items-center justify-center gap-1.5 rounded-lg bg-white px-3.5 py-2 text-xs font-semibold text-black transition hover:bg-zinc-200 active:scale-[0.98] disabled:opacity-75 cursor-pointer"
           >
-            {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Share2 className="h-3.5 w-3.5" />}
+            {isDownloading ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 animate-spin text-black" />
+                <span>Downloading...</span>
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5" />
+                <span>Download</span>
+              </>
+            )}
+          </button>
+
+          {/* Delete clip button */}
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting}
+            title="Delete clip"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-white/[0.03] text-zinc-400 transition hover:border-red-500/40 hover:bg-red-500/10 hover:text-red-400 active:scale-[0.96] disabled:opacity-50 cursor-pointer"
+          >
+            {isDeleting ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin text-red-400" />
+            ) : (
+              <Trash2 className="h-3.5 w-3.5" />
+            )}
           </button>
         </div>
       </div>

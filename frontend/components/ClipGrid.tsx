@@ -9,9 +9,10 @@ interface ClipGridProps {
   clips: Clip[];
   videoTitle?: string;
   onReset: () => void;
+  onDeleteClip?: (clip: Clip) => void;
 }
 
-export function ClipGrid({ clips, videoTitle, onReset }: ClipGridProps) {
+export function ClipGrid({ clips, videoTitle, onReset, onDeleteClip }: ClipGridProps) {
   const [sortBy, setSortBy] = useState<"score" | "duration-desc" | "duration-asc">("score");
 
   const sortedClips = [...clips].sort((a, b) => {
@@ -70,7 +71,12 @@ export function ClipGrid({ clips, videoTitle, onReset }: ClipGridProps) {
       {/* Responsive Grid: 3 cols on desktop, 2 on tablet, 1 on mobile */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedClips.map((clip, index) => (
-          <ClipCard key={`${clip.file}-${index}`} clip={clip} index={index} />
+          <ClipCard
+            key={`${clip.file || (clip as any).id || index}-${index}`}
+            clip={clip}
+            index={index}
+            onDelete={onDeleteClip}
+          />
         ))}
       </div>
     </div>

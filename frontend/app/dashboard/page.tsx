@@ -9,7 +9,7 @@ import { ClipGrid } from "@/components/ClipGrid";
 import { EmptyState } from "@/components/EmptyState";
 import { ErrorState } from "@/components/ErrorState";
 import { MyClips } from "@/components/MyClips";
-import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips } from "@/lib/api/client";
+import { processVideo, uploadAndProcessVideo, getJobStatus, getSavedClips, deleteClip } from "@/lib/api/client";
 import {
   getUserCredits,
   getCreditTransactions,
@@ -229,6 +229,21 @@ export default function DashboardPage() {
     setUploadProgress(0);
   };
 
+  const handleDeleteClip = async (clipToDelete: Clip) => {
+    const identifier = clipToDelete.file || (clipToDelete as any).id || (clipToDelete as any).filename;
+    // 1. Optimistic removal from UI state
+    setGeneratedClips((prev) => prev.filter((c) => (c.file || (c as any).id) !== identifier));
+    setSavedClips((prev) => prev.filter((c) => (c.file || (c as any).id) !== identifier));
+
+    // 2. Persistent removal from server DB & storage
+    try {
+      const token = await getToken();
+      await deleteClip(identifier, token);
+    } catch (e) {
+      console.warn("Delete clip backend call:", e);
+    }
+  };
+
   return (
     <div className="flex min-h-screen bg-[#090a0e] text-white">
       {/* Sidebar */}
@@ -333,6 +348,7 @@ export default function DashboardPage() {
                   clips={generatedClips}
                   videoTitle={currentJob?.video?.title}
                   onReset={handleReset}
+                  onDeleteClip={handleDeleteClip}
                 />
               )}
 
@@ -352,6 +368,7 @@ export default function DashboardPage() {
             <MyClips
               clips={savedClips}
               onNewClip={() => setCurrentTab("studio")}
+              onDeleteClip={handleDeleteClip}
             />
           )}
 

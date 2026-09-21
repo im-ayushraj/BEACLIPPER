@@ -162,6 +162,26 @@ export async function getSavedClips(token?: string | null): Promise<{ clips: Cli
   }
 }
 
+export async function deleteClip(clipIdentifier: string, token?: string | null): Promise<boolean> {
+  try {
+    const headers: Record<string, string> = {
+      "X-Device-Id": getClientDeviceId(),
+    };
+    if (token) {
+      headers["Authorization"] = `Bearer ${token}`;
+    }
+
+    const res = await fetch(`${BASE_URL}/api/clips/${encodeURIComponent(clipIdentifier)}`, {
+      method: "DELETE",
+      headers,
+    });
+    return res.ok;
+  } catch (err) {
+    console.warn("Failed to delete clip on backend:", err);
+    return false;
+  }
+}
+
 export async function getUsage(): Promise<UserUsage> {
   // Pre-configured usage structure ready for subscription limits
   return {
