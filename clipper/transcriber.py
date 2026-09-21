@@ -102,6 +102,95 @@ def fetch_youtube_transcript(video_id: str) -> List[Dict[str, Any]]:
     return segments
 
 
+def fetch_youtube_transcript_ytdlp(video_id: str) -> List[Dict[str, Any]]:
+    """
+    Fallback YouTube caption extractor using yt-dlp.
+    Extracts official or auto-generated subtitles directly from YouTube.
+    Bypasses IP restrictions and rate limits that block youtube-transcript-api.
+    """
+    import yt_dlp
+    import requests
+    from clipper.downloader import get_base_ydl_opts
+
+    url = f"https://www.youtube.com/watch?v={video_id}"
+    ydl_opts = get_base_ydl_opts()
+    ydl_opts.update({
+        "skip_download": True,
+        "quiet": True,
+        "no_warnings": True,
+    })
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                return []
+
+            captions = info.get("subtitles") or {}
+            auto_captions = info.get("automatic_captions") or {}
+
+            # Priority languages
+            priority_langs = ["en", "en-US", "en-GB", "en-IN", "hi", "hi-Latn"]
+            target_track = None
+
+            # Look in official subtitles first
+            for lang in priority_langs:
+                if lang in captions and captions[lang]:
+                    target_track = captions[lang]
+                    break
+
+            # Look in auto-generated captions
+            if not target_track:
+                for lang in priority_langs:
+                    if lang in auto_captions and auto_captions[lang]:
+                        target_track = auto_captions[lang]
+                        break
+
+            # Fallback to whatever first language track exists
+            if not target_track:
+                if captions:
+                    target_track = next(iter(captions.values()), None)
+                elif auto_captions:
+                    target_track = next(iter(auto_captions.values()), None)
+
+            if not target_track:
+                return []
+
+            # Prefer json3 format (has exact timestamps and words)
+            json3_fmt = next((f for f in target_track if f.get("ext") == "json3"), target_track[0])
+            sub_url = json3_fmt.get("url")
+            if not sub_url:
+                return []
+
+            resp = requests.get(sub_url, timeout=10)
+            if resp.status_code != 200:
+                return []
+
+            data = resp.json()
+            events = data.get("events", [])
+            segments: List[Dict[str, Any]] = []
+
+            for ev in events:
+                if "segs" not in ev:
+                    continue
+                start_ms = ev.get("tStartMs", 0)
+                dur_ms = ev.get("dDurationMs", 0)
+                start = round(start_ms / 1000.0, 2)
+                end = round((start_ms + dur_ms) / 1000.0, 2)
+                text = "".join(s.get("utf8", "") for s in ev.get("segs", [])).replace("\n", " ").strip()
+                if text and text != "[Music]":
+                    segments.append({
+                        "start": start,
+                        "end": max(end, round(start + 0.5, 2)),
+                        "text": text,
+                    })
+
+            return segments
+    except Exception as e:
+        print(f"[Transcriber] yt-dlp subtitle extraction notice: {e}")
+        return []
+
+
 def transcribe_audio_groq(audio_path: str, api_key: str) -> List[Dict[str, Any]]:
     """
     Ultra-fast audio transcription using Groq Whisper Large V3 Turbo.
@@ -229,14 +318,24 @@ def get_transcript(
             ]
         }
     """
-    # 1. For YouTube videos, try captions first (fast and free ~0.5s)
+    # 1. For YouTube videos, try instant captions (youtube-transcript-api first, then yt-dlp)
     if not is_local_file and video_id and not video_id.startswith("upload_"):
+        # 1A. Try standard YouTube Transcript API
         try:
             segments = fetch_youtube_transcript(video_id)
             if segments:
                 return {"segments": segments}
         except Exception as e:
-            print(f"[Transcriber] YouTube caption fetch failed: {e}. Falling back to audio STT...")
+            print(f"[Transcriber] YouTube transcript API unavailable ({e}). Trying yt-dlp subtitle extraction...")
+
+        # 1B. Try yt-dlp subtitle/caption extraction (bypasses IP blocks)
+        try:
+            segments = fetch_youtube_transcript_ytdlp(video_id)
+            if segments:
+                print(f"[Transcriber] Successfully extracted {len(segments)} caption segments via yt-dlp.")
+                return {"segments": segments}
+        except Exception as yt_err:
+            print(f"[Transcriber] yt-dlp subtitle extraction notice: {yt_err}")
 
     # 2. If audio file does not exist yet but video_path is provided, extract audio on demand now
     if audio_path and not os.path.exists(audio_path) and video_path and os.path.exists(video_path):
