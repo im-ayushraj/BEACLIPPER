@@ -299,24 +299,27 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                 )
                 db_session.add(usage_rec)
 
-                # Save ClipModel records
+                # Save ClipModel records (idempotent - avoid duplicate insertions)
                 for c in result.get("clips", []):
-                    clip_rec = ClipModel(
-                        job_id=job_id,
-                        user_id=user_id,
-                        file_name=c.get("file", ""),
-                        title=c.get("title", ""),
-                        duration=float(c.get("duration", 0.0)),
-                        score=float(c.get("score", 8.0)),
-                        tags_json=json.dumps(c.get("tags", [])),
-                        explanation=c.get("explanation", ""),
-                        reason=c.get("reason", ""),
-                        start_time=float(c.get("start", 0.0)),
-                        end_time=float(c.get("end", 0.0)),
-                        storage_path=f"users/{user_id}/{c.get('file', '')}",
-                        signed_url=c.get("url")
-                    )
-                    db_session.add(clip_rec)
+                    c_file = c.get("file", "")
+                    existing = db_session.query(ClipModel).filter_by(job_id=job_id, file_name=c_file).first()
+                    if not existing:
+                        clip_rec = ClipModel(
+                            job_id=job_id,
+                            user_id=user_id,
+                            file_name=c_file,
+                            title=c.get("title", ""),
+                            duration=float(c.get("duration", 0.0)),
+                            score=float(c.get("score", 8.0)),
+                            tags_json=json.dumps(c.get("tags", [])),
+                            explanation=c.get("explanation", ""),
+                            reason=c.get("reason", ""),
+                            start_time=float(c.get("start", 0.0)),
+                            end_time=float(c.get("end", 0.0)),
+                            storage_path=f"users/{user_id}/{c_file}",
+                            signed_url=c.get("url")
+                        )
+                        db_session.add(clip_rec)
 
                 db_session.commit()
             finally:
@@ -953,12 +956,19 @@ def get_saved_clips(
             .order_by(ClipModel.created_at.desc())
             .all()
         )
+        seen_keys = set()
         for r in records:
+            # Deduplicate by job_id and file_name to guarantee unique clip listings
+            dedup_key = (r.job_id, r.file_name)
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+
             signed_url = r.signed_url
             storage_path = r.storage_path
 
-            # Dynamically refresh signed URL if storage path exists
-            if storage_path:
+            # Only generate signed URL if not already present, avoiding redundant slow API calls
+            if not signed_url and storage_path:
                 if s3_storage.is_configured():
                     fresh_s3 = s3_storage.generate_presigned_download_url(
                         storage_path, expires_in=86400, filename=r.file_name

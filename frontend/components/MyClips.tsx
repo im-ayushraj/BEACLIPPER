@@ -15,7 +15,20 @@ interface MyClipsProps {
 export function MyClips({ clips, onNewClip, onDeleteClip }: MyClipsProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredClips = clips.filter((clip) => {
+  // Defensive deduplication by file or identifier
+  const uniqueClips: Clip[] = [];
+  const seenIds = new Set<string>();
+  for (const c of clips) {
+    const cid = c.file || (c as any).id || (c as any).filename;
+    if (cid && !seenIds.has(cid)) {
+      seenIds.add(cid);
+      uniqueClips.push(c);
+    } else if (!cid) {
+      uniqueClips.push(c);
+    }
+  }
+
+  const filteredClips = uniqueClips.filter((clip) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     const titleMatch = clip.title?.toLowerCase().includes(q);
@@ -24,7 +37,7 @@ export function MyClips({ clips, onNewClip, onDeleteClip }: MyClipsProps) {
     return titleMatch || tagMatch || explanationMatch;
   });
 
-  if (clips.length === 0) {
+  if (uniqueClips.length === 0) {
     return (
       <div className="flex flex-col gap-5">
         <div>
@@ -42,7 +55,7 @@ export function MyClips({ clips, onNewClip, onDeleteClip }: MyClipsProps) {
         <div>
           <h2 className="text-xl font-semibold text-white tracking-tight">Saved Clips</h2>
           <p className="text-xs text-zinc-400 mt-0.5">
-            {clips.length} generated clips stored in cloud.
+            {uniqueClips.length} generated clips stored in cloud.
           </p>
         </div>
 

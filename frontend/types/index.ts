@@ -6,6 +6,8 @@ export interface ProcessingStep {
 }
 
 export interface Clip {
+  id?: string;
+  job_id?: string;
   file: string;
   title: string;
   tags: string[];

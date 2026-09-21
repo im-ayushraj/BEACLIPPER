@@ -88,8 +88,30 @@ export default function DashboardPage() {
       try {
         const token = await getToken();
         const data = await getSavedClips(token);
-        if (data && data.clips) {
-          setSavedClips(data.clips);
+        if (data && data.clips && data.clips.length > 0) {
+          // Deduplicate clips by file or identifier
+          const uniqueClips: Clip[] = [];
+          const seenIds = new Set<string>();
+          for (const c of data.clips) {
+            const cid = c.file || (c as any).id || (c as any).filename;
+            if (cid && !seenIds.has(cid)) {
+              seenIds.add(cid);
+              uniqueClips.push(c);
+            }
+          }
+          setSavedClips(uniqueClips);
+
+          // Hydrate generatedClips with latest job's clips if empty so refreshing doesn't wipe active studio view
+          setGeneratedClips((prev) => {
+            if (prev.length === 0) {
+              const latestJobId = uniqueClips[0]?.job_id;
+              if (latestJobId) {
+                return uniqueClips.filter((c: any) => c.job_id === latestJobId);
+              }
+              return uniqueClips.slice(0, 10);
+            }
+            return prev;
+          });
         } else {
           setSavedClips([]);
         }
@@ -139,6 +161,7 @@ export default function DashboardPage() {
 
           if (jobData.status === "completed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            setIsProcessing(false);
             const newClips = jobData.clips || [];
             setGeneratedClips(newClips);
             setSavedClips((prev) => {
@@ -198,6 +221,7 @@ export default function DashboardPage() {
 
           if (jobData.status === "completed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            setIsProcessing(false);
             const newClips = jobData.clips || [];
             setGeneratedClips(newClips);
             setSavedClips((prev) => {
