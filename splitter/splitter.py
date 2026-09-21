@@ -75,9 +75,12 @@ def probe_video_metadata(video_path: str | Path) -> Dict[str, Any]:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            errors="replace"
+            errors="replace",
+            timeout=30
         )
         err = proc.stderr or ""
+    except subprocess.TimeoutExpired:
+        raise VideoSplitError("FFmpeg metadata probe timed out (file may be corrupted or slow to read).")
     except Exception as e:
         raise VideoSplitError(f"Failed to execute FFmpeg probe: {e}") from e
 
@@ -207,16 +210,20 @@ def split_video_sequentially(
             str(clip_file)
         ]
 
-        proc = subprocess.run(
-            copy_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            errors="replace"
-        )
+        try:
+            proc = subprocess.run(
+                copy_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+                timeout=180
+            )
+        except subprocess.TimeoutExpired:
+            proc = None
 
         # Verify output exists and is not corrupt/empty; fallback to ultrafast re-encode if needed
-        if proc.returncode != 0 or not clip_file.exists() or clip_file.stat().st_size < 500:
+        if proc is None or proc.returncode != 0 or not clip_file.exists() or clip_file.stat().st_size < 500:
             encode_cmd = [
                 ffmpeg_bin,
                 "-y",
@@ -232,13 +239,18 @@ def split_video_sequentially(
                 "-movflags", "+faststart",
                 str(clip_file)
             ]
-            proc = subprocess.run(
-                encode_cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                errors="replace"
-            )
+            try:
+                proc = subprocess.run(
+                    encode_cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    errors="replace",
+                    timeout=180
+                )
+            except subprocess.TimeoutExpired:
+                raise VideoSplitError(f"FFmpeg timed out while encoding clip {seg['filename']}")
+
             if proc.returncode != 0 or not clip_file.exists():
                 raise VideoSplitError(f"FFmpeg failed while creating clip {seg['filename']}: {proc.stderr[:300]}")
 

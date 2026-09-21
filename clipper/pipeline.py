@@ -25,8 +25,11 @@ class ClipperPipeline:
         gemini_api_key: Optional[str] = None,
         openai_api_key: Optional[str] = None,
         groq_api_key: Optional[str] = None,
+        temp_dir: Optional[str | Path] = None,
+        **kwargs: Any
     ):
-        self.working_dir = Path(working_dir)
+        target_working = temp_dir if temp_dir is not None else working_dir
+        self.working_dir = Path(target_working)
         self.output_dir = Path(output_dir)
         self.gemini_api_key = gemini_api_key or os.getenv("GEMINI_API_KEY")
         self.openai_api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
@@ -42,6 +45,8 @@ class ClipperPipeline:
         target_clip_count: int = 10,
         status_callback: Optional[Callable[[str, str], None]] = None,
         precomputed_transcript: Optional[List[Dict[str, Any]]] = None,
+        url: Optional[str] = None,
+        count: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Execute the full pipeline for a YouTube URL or directly uploaded video file.
@@ -49,7 +54,10 @@ class ClipperPipeline:
         """
         import time
 
-        if not youtube_url and not source_video_path:
+        actual_url = youtube_url or url
+        actual_count = count if count is not None else target_clip_count
+
+        if not actual_url and not source_video_path:
             raise ValueError("Either youtube_url or source_video_path must be provided to ClipperPipeline.run")
 
         start_time = time.time()

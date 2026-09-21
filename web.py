@@ -21,7 +21,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from datetime import datetime, timezone
-from sqlalchemy import text
+from sqlalchemy import text, func
 
 from clipper.pipeline import ClipperPipeline
 from clipper.cleanup import start_retention_sweeper
@@ -257,65 +257,67 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         # 2. Record Job & Usage in Persistence DB
         try:
             db_session = get_db_session()
-            metrics = result.get("metrics", {})
-            v_meta = result.get("video", {})
-            
-            # Save or update ProcessingJobModel
-            job_rec = db_session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-            if not job_rec:
-                job_rec = ProcessingJobModel(
-                    job_id=job_id,
+            try:
+                metrics = result.get("metrics", {})
+                v_meta = result.get("video", {})
+                
+                # Save or update ProcessingJobModel
+                job_rec = db_session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                if not job_rec:
+                    job_rec = ProcessingJobModel(
+                        job_id=job_id,
+                        user_id=user_id,
+                        job_type="ai_clipper",
+                        url=url,
+                        status="completed",
+                        stage="completed",
+                        progress_percent=100,
+                        duration_seconds=float(v_meta.get("duration", 0.0)),
+                        credits_deducted=float(job.get("credits_deducted", 0.0)),
+                        completed_at=datetime.now(timezone.utc)
+                    )
+                    db_session.add(job_rec)
+                else:
+                    job_rec.status = "completed"
+                    job_rec.stage = "completed"
+                    job_rec.progress_percent = 100
+                    job_rec.completed_at = datetime.now(timezone.utc)
+
+                # Save UsageRecord
+                usage_rec = UsageRecord(
                     user_id=user_id,
-                    job_type="ai_clipper",
-                    url=url,
-                    status="completed",
-                    stage="completed",
-                    progress_percent=100,
-                    duration_seconds=float(v_meta.get("duration", 0.0)),
-                    credits_deducted=float(job.get("credits_deducted", 0.0)),
-                    completed_at=datetime.now(timezone.utc)
-                )
-                db_session.add(job_rec)
-            else:
-                job_rec.status = "completed"
-                job_rec.stage = "completed"
-                job_rec.progress_percent = 100
-                job_rec.completed_at = datetime.now(timezone.utc)
-
-            # Save UsageRecord
-            usage_rec = UsageRecord(
-                user_id=user_id,
-                job_id=job_id,
-                operation="ai_clipper",
-                duration_seconds=float(metrics.get("video_duration", v_meta.get("duration", 0.0))),
-                processing_seconds=float(metrics.get("total_processing_seconds", 0.0)),
-                llm_calls=int(metrics.get("llm_calls", 1)),
-                clip_count=len(result.get("clips", [])),
-                storage_bytes=int(metrics.get("output_size_bytes", 0))
-            )
-            db_session.add(usage_rec)
-
-            # Save ClipModel records
-            for c in result.get("clips", []):
-                clip_rec = ClipModel(
                     job_id=job_id,
-                    user_id=user_id,
-                    file_name=c.get("file", ""),
-                    title=c.get("title", ""),
-                    duration=float(c.get("duration", 0.0)),
-                    score=float(c.get("score", 8.0)),
-                    tags_json=json.dumps(c.get("tags", [])),
-                    explanation=c.get("explanation", ""),
-                    reason=c.get("reason", ""),
-                    start_time=float(c.get("start", 0.0)),
-                    end_time=float(c.get("end", 0.0)),
-                    storage_path=f"users/{user_id}/{c.get('file', '')}",
-                    signed_url=c.get("url")
+                    operation="ai_clipper",
+                    duration_seconds=float(metrics.get("video_duration", v_meta.get("duration", 0.0))),
+                    processing_seconds=float(metrics.get("total_processing_seconds", 0.0)),
+                    llm_calls=int(metrics.get("llm_calls", 1)),
+                    clip_count=len(result.get("clips", [])),
+                    storage_bytes=int(metrics.get("output_size_bytes", 0))
                 )
-                db_session.add(clip_rec)
+                db_session.add(usage_rec)
 
-            db_session.commit()
-            db_session.close()
+                # Save ClipModel records
+                for c in result.get("clips", []):
+                    clip_rec = ClipModel(
+                        job_id=job_id,
+                        user_id=user_id,
+                        file_name=c.get("file", ""),
+                        title=c.get("title", ""),
+                        duration=float(c.get("duration", 0.0)),
+                        score=float(c.get("score", 8.0)),
+                        tags_json=json.dumps(c.get("tags", [])),
+                        explanation=c.get("explanation", ""),
+                        reason=c.get("reason", ""),
+                        start_time=float(c.get("start", 0.0)),
+                        end_time=float(c.get("end", 0.0)),
+                        storage_path=f"users/{user_id}/{c.get('file', '')}",
+                        signed_url=c.get("url")
+                    )
+                    db_session.add(clip_rec)
+
+                db_session.commit()
+            finally:
+                db_session.close()
         except Exception as db_err:
             print(f"[DB] Warning saving job and usage: {db_err}")
 
@@ -389,13 +391,15 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         # Update DB job status to error
         try:
             db_session = get_db_session()
-            job_rec = db_session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-            if job_rec:
-                job_rec.status = "error"
-                job_rec.error = str(e)
-                job_rec.completed_at = datetime.now(timezone.utc)
-                db_session.commit()
-            db_session.close()
+            try:
+                job_rec = db_session.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                if job_rec:
+                    job_rec.status = "error"
+                    job_rec.error = str(e)
+                    job_rec.completed_at = datetime.now(timezone.utc)
+                    db_session.commit()
+            finally:
+                db_session.close()
         except Exception:
             pass
 
@@ -485,9 +489,11 @@ def health_check():
     db_connected = False
     try:
         session = get_db_session()
-        session.execute(text("SELECT 1"))
-        session.close()
-        db_connected = True
+        try:
+            session.execute(text("SELECT 1"))
+            db_connected = True
+        finally:
+            session.close()
     except Exception:
         db_connected = False
 
@@ -655,17 +661,19 @@ def transcribe_video(
         # Record usage
         try:
             db_s = get_db_session()
-            usage = UsageRecord(
-                user_id=user_id,
-                job_id=job_id,
-                operation="transcription",
-                duration_seconds=dur,
-                processing_seconds=proc_sec,
-                llm_calls=0
-            )
-            db_s.add(usage)
-            db_s.commit()
-            db_s.close()
+            try:
+                usage = UsageRecord(
+                    user_id=user_id,
+                    job_id=job_id,
+                    operation="transcription",
+                    duration_seconds=dur,
+                    processing_seconds=proc_sec,
+                    llm_calls=0
+                )
+                db_s.add(usage)
+                db_s.commit()
+            finally:
+                db_s.close()
         except Exception:
             pass
 
@@ -693,17 +701,28 @@ def get_user_usage_summary(
     authorization: Optional[str] = Header(None),
     x_device_id: Optional[str] = Header(None, alias="X-Device-Id")
 ):
-    """Retrieve actual infrastructure usage metrics for authenticated user."""
+    """Retrieve actual infrastructure usage metrics for authenticated user using fast SQL aggregation."""
     user_id = extract_user_id(authorization, x_device_id)
     session = get_db_session()
     try:
-        records = session.query(UsageRecord).filter_by(user_id=user_id).all()
-        total_duration_mins = sum(r.duration_seconds for r in records) / 60.0
-        total_clips = sum(r.clip_count for r in records)
-        total_llm_calls = sum(r.llm_calls for r in records)
+        row = (
+            session.query(
+                func.count(UsageRecord.id),
+                func.coalesce(func.sum(UsageRecord.duration_seconds), 0.0),
+                func.coalesce(func.sum(UsageRecord.clip_count), 0),
+                func.coalesce(func.sum(UsageRecord.llm_calls), 0),
+            )
+            .filter_by(user_id=user_id)
+            .first()
+        )
+        total_jobs = row[0] if row else 0
+        total_duration_mins = (float(row[1]) / 60.0) if row else 0.0
+        total_clips = int(row[2]) if row else 0
+        total_llm_calls = int(row[3]) if row else 0
+
         return {
             "user_id": user_id,
-            "total_jobs": len(records),
+            "total_jobs": total_jobs,
             "total_duration_minutes": round(total_duration_mins, 1),
             "total_clips_generated": total_clips,
             "total_llm_calls": total_llm_calls,
@@ -873,9 +892,15 @@ def admin_list_users_endpoint(
     users = list_clerk_users()
     db_s = get_db_session()
     try:
+        user_ids = [u["id"] for u in users if u.get("id")]
+        accounts_map = {}
+        if user_ids:
+            accounts = db_s.query(CreditAccount).filter(CreditAccount.user_id.in_(user_ids)).all()
+            accounts_map = {acc.user_id: acc for acc in accounts}
+
         for u in users:
-            uid = u["id"]
-            acc = db_s.query(CreditAccount).filter_by(user_id=uid).first()
+            uid = u.get("id")
+            acc = accounts_map.get(uid)
             if acc:
                 u["db_balance"] = round(acc.balance, 2)
                 # Keep Clerk metadata matching DB
@@ -1149,11 +1174,13 @@ def process_video(
     if x_idempotency_key:
         try:
             db_s = get_db_session()
-            existing_job = db_s.query(ProcessingJobModel).filter_by(
-                user_id=user_id,
-                idempotency_key=x_idempotency_key
-            ).first()
-            db_s.close()
+            try:
+                existing_job = db_s.query(ProcessingJobModel).filter_by(
+                    user_id=user_id,
+                    idempotency_key=x_idempotency_key
+                ).first()
+            finally:
+                db_s.close()
             if existing_job and existing_job.job_id in jobs:
                 return {
                     "job_id": existing_job.job_id,
@@ -1241,21 +1268,23 @@ def process_video(
     # Record job in database
     try:
         db_s = get_db_session()
-        db_job = ProcessingJobModel(
-            job_id=job_id,
-            user_id=user_id,
-            job_type="ai_clipper",
-            url=safe_url,
-            status="processing",
-            stage="video",
-            progress_percent=5,
-            duration_seconds=dur,
-            credits_deducted=required_credits,
-            idempotency_key=x_idempotency_key
-        )
-        db_s.add(db_job)
-        db_s.commit()
-        db_s.close()
+        try:
+            db_job = ProcessingJobModel(
+                job_id=job_id,
+                user_id=user_id,
+                job_type="ai_clipper",
+                url=safe_url,
+                status="processing",
+                stage="video",
+                progress_percent=5,
+                duration_seconds=dur,
+                credits_deducted=required_credits,
+                idempotency_key=x_idempotency_key
+            )
+            db_s.add(db_job)
+            db_s.commit()
+        finally:
+            db_s.close()
     except Exception as db_e:
         print(f"[DB] Warning creating job record: {db_e}")
 
@@ -1425,21 +1454,23 @@ async def process_video_upload(
     # Record job in local database
     try:
         db_s = get_db_session()
-        db_job = ProcessingJobModel(
-            job_id=job_id,
-            user_id=user_id,
-            job_type="ai_clipper",
-            url=f"uploaded://{safe_filename}",
-            status="processing",
-            stage="video",
-            progress_percent=5,
-            duration_seconds=dur,
-            credits_deducted=required_credits,
-            idempotency_key=x_idempotency_key
-        )
-        db_s.add(db_job)
-        db_s.commit()
-        db_s.close()
+        try:
+            db_job = ProcessingJobModel(
+                job_id=job_id,
+                user_id=user_id,
+                job_type="ai_clipper",
+                url=f"uploaded://{safe_filename}",
+                status="processing",
+                stage="video",
+                progress_percent=5,
+                duration_seconds=dur,
+                credits_deducted=required_credits,
+                idempotency_key=x_idempotency_key
+            )
+            db_s.add(db_job)
+            db_s.commit()
+        finally:
+            db_s.close()
     except Exception as db_e:
         print(f"[DB] Warning creating job record: {db_e}")
 
@@ -1567,18 +1598,20 @@ def run_split_worker(job_id: str, video_file_path: Path, clip_duration: float, u
         # Record usage (0 credits consumed, purely tracking infrastructure utilization)
         try:
             db_s = get_db_session()
-            usage = UsageRecord(
-                user_id=user_id,
-                job_id=job_id,
-                operation="video_splitter",
-                duration_seconds=float(source_duration or 0.0),
-                clip_count=res["total_clips"],
-                llm_calls=0,
-                processing_seconds=round(time.time() - job["created_at"], 2)
-            )
-            db_s.add(usage)
-            db_s.commit()
-            db_s.close()
+            try:
+                usage = UsageRecord(
+                    user_id=user_id,
+                    job_id=job_id,
+                    operation="video_splitter",
+                    duration_seconds=float(source_duration or 0.0),
+                    clip_count=res["total_clips"],
+                    llm_calls=0,
+                    processing_seconds=round(time.time() - job["created_at"], 2)
+                )
+                db_s.add(usage)
+                db_s.commit()
+            finally:
+                db_s.close()
         except Exception as u_err:
             print(f"[Splitter] Warning logging usage: {u_err}")
 

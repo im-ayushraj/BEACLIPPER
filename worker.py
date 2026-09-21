@@ -73,25 +73,25 @@ def heartbeat_loop(job_id: str, stop_event: threading.Event):
         stop_event.wait(HEARTBEAT_INTERVAL_SECONDS)
         if stop_event.is_set():
             break
+        db_s = get_db_session()
         try:
-            db_s = get_db_session()
             job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
             if job and job.status == "processing":
                 job.heartbeat_at = datetime.now(timezone.utc)
                 db_s.commit()
-            db_s.close()
         except Exception as e:
             logger.warning("Heartbeat update failed for job %s: %s", job_id, e)
+        finally:
+            db_s.close()
 
 
-def acquire_next_job() -> Optional[ProcessingJobModel]:
+def acquire_next_job() -> Optional[dict]:
     """Atomically polls and locks the next queued job from database."""
     db_s = get_db_session()
     try:
         # Find oldest queued job
         job = db_s.query(ProcessingJobModel).filter_by(status="queued").order_by(ProcessingJobModel.created_at.asc()).first()
         if not job:
-            db_s.close()
             return None
 
         # Lock job for this worker
@@ -100,21 +100,28 @@ def acquire_next_job() -> Optional[ProcessingJobModel]:
         job.heartbeat_at = datetime.now(timezone.utc)
         db_s.commit()
 
+        meta = {}
+        if job.metadata_json:
+            try:
+                meta = json.loads(job.metadata_json)
+            except Exception:
+                meta = {}
+
         job_data = {
             "job_id": job.job_id,
             "user_id": job.user_id,
             "url": job.url,
-            "source_file_path": job.source_file_path,
-            "count": job.clip_count or 10,
+            "source_file_path": getattr(job, "source_file_path", meta.get("source_file_path")),
+            "count": getattr(job, "clip_count", meta.get("count", 10)),
             "retry_count": job.retry_count or 0,
         }
-        db_s.close()
         return job_data
     except Exception as e:
         db_s.rollback()
-        db_s.close()
         logger.error("Error acquiring next job from queue: %s", e)
         return None
+    finally:
+        db_s.close()
 
 
 def execute_job(job_info: dict):
@@ -132,18 +139,16 @@ def execute_job(job_info: dict):
     hb_thread.start()
 
     pipeline = ClipperPipeline(
+        working_dir=TEMP_DIR,
         output_dir=OUTPUT_DIR,
-        temp_dir=TEMP_DIR,
-        target_clip_count=count,
-        target_clip_duration=35.0,
     )
 
     try:
         # Run pipeline
         if source_file_path and os.path.exists(source_file_path):
-            result = pipeline.run(url=None, count=count, source_video_path=source_file_path)
+            result = pipeline.run(source_video_path=source_file_path, target_clip_count=count)
         else:
-            result = pipeline.run(url=url, count=count)
+            result = pipeline.run(youtube_url=url, target_clip_count=count)
 
         clips = result.get("clips", [])
         video_metadata = result.get("video", {})
@@ -175,14 +180,23 @@ def execute_job(job_info: dict):
 
         # Mark job as completed
         db_s = get_db_session()
-        db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-        if db_job:
-            db_job.status = "completed"
-            db_job.completed_at = datetime.now(timezone.utc)
-            db_job.clips_json = json.dumps(uploaded_clips)
-            db_job.video_title = title
-            db_s.commit()
-        db_s.close()
+        try:
+            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+            if db_job:
+                db_job.status = "completed"
+                db_job.completed_at = datetime.now(timezone.utc)
+                job_meta = {}
+                if db_job.metadata_json:
+                    try:
+                        job_meta = json.loads(db_job.metadata_json)
+                    except Exception:
+                        pass
+                job_meta["video_title"] = title
+                job_meta["clips_count"] = len(uploaded_clips)
+                db_job.metadata_json = json.dumps(job_meta)
+                db_s.commit()
+        finally:
+            db_s.close()
 
         logger.info("Job %s successfully completed (%d clips generated)", job_id, len(uploaded_clips))
 
@@ -205,28 +219,32 @@ def execute_job(job_info: dict):
             new_retry = retry_count + 1
             logger.info("Scheduling retry %d/%d for job %s", new_retry, MAX_JOB_RETRIES, job_id)
             db_s = get_db_session()
-            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-            if db_job:
-                db_job.status = "queued"
-                db_job.retry_count = new_retry
-                db_s.commit()
-            db_s.close()
+            try:
+                db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                if db_job:
+                    db_job.status = "queued"
+                    db_job.retry_count = new_retry
+                    db_s.commit()
+            finally:
+                db_s.close()
         else:
             # Terminal failure: refund credits and send failure notification
             logger.info("Job %s exhausted retries. Marking error and refunding credits.", job_id)
             db_s = get_db_session()
-            db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
-            if db_job:
-                db_job.status = "error"
-                db_job.error_message = str(exc)
-                db_s.commit()
-            db_s.close()
+            try:
+                db_job = db_s.query(ProcessingJobModel).filter_by(job_id=job_id).first()
+                if db_job:
+                    db_job.status = "error"
+                    db_job.error = str(exc)
+                    db_s.commit()
+            finally:
+                db_s.close()
 
             # Refund reserved credits
             try:
                 CreditService.refund_credits(
                     user_id=user_id,
-                    job_id=job_id,
+                    reference_id=job_id,
                     reason=f"Worker processing error: {exc}"
                 )
             except Exception as ref_err:

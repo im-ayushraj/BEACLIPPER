@@ -256,33 +256,35 @@ class JobQueueManager:
             from clipper.credit_service import CreditService
 
             session = get_db_session()
-            stale_jobs = session.query(ProcessingJobModel).filter(
-                ProcessingJobModel.status.in_(["processing", "queued"])
-            ).all()
+            try:
+                stale_jobs = session.query(ProcessingJobModel).filter(
+                    ProcessingJobModel.status.in_(["processing", "queued"])
+                ).all()
 
-            recovered_count = 0
-            for job in stale_jobs:
-                job.status = "error"
-                job.error = "Job interrupted by server restart or maintenance. Deducted credits refunded."
-                job.completed_at = datetime.now(timezone.utc)
+                recovered_count = 0
+                for job in stale_jobs:
+                    job.status = "error"
+                    job.error = "Job interrupted by server restart or maintenance. Deducted credits refunded."
+                    job.completed_at = datetime.now(timezone.utc)
 
-                # Automatic refund of debited credits
-                if job.credits_deducted and job.credits_deducted > 0:
-                    try:
-                        CreditService.refund_credits(
-                            user_id=job.user_id,
-                            reference_id=job.job_id,
-                            reason="Server restart recovery refund"
-                        )
-                    except Exception as r_err:
-                        print(f"[Recovery] Warning refunding {job.job_id}: {r_err}")
+                    # Automatic refund of debited credits
+                    if job.credits_deducted and job.credits_deducted > 0:
+                        try:
+                            CreditService.refund_credits(
+                                user_id=job.user_id,
+                                reference_id=job.job_id,
+                                reason="Server restart recovery refund"
+                            )
+                        except Exception as r_err:
+                            print(f"[Recovery] Warning refunding {job.job_id}: {r_err}")
 
-                recovered_count += 1
+                    recovered_count += 1
 
-            if recovered_count > 0:
-                session.commit()
-                print(f"[Recovery] Successfully recovered {recovered_count} crashed/interrupted jobs from previous session.")
-            session.close()
+                if recovered_count > 0:
+                    session.commit()
+                    print(f"[Recovery] Successfully recovered {recovered_count} crashed/interrupted jobs from previous session.")
+            finally:
+                session.close()
         except Exception as e:
             print(f"[Recovery] Notice: Crash recovery check: {e}")
 
@@ -301,37 +303,39 @@ class JobQueueManager:
 
                     threshold = datetime.now(timezone.utc) - timedelta(minutes=timeout_minutes)
                     session = get_db_session()
-                    hung_jobs = session.query(ProcessingJobModel).filter(
-                        ProcessingJobModel.status == "processing",
-                        ProcessingJobModel.heartbeat_at < threshold
-                    ).all()
+                    try:
+                        hung_jobs = session.query(ProcessingJobModel).filter(
+                            ProcessingJobModel.status == "processing",
+                            ProcessingJobModel.heartbeat_at < threshold
+                        ).all()
 
-                    for h_job in hung_jobs:
-                        print(f"[Supervisor] Terminating hung job {h_job.job_id} (last heartbeat: {h_job.heartbeat_at})")
-                        h_job.status = "error"
-                        h_job.error = f"Processing timeout exceeded ({timeout_minutes} mins). Automatic credit refund applied."
-                        h_job.completed_at = datetime.now(timezone.utc)
+                        for h_job in hung_jobs:
+                            print(f"[Supervisor] Terminating hung job {h_job.job_id} (last heartbeat: {h_job.heartbeat_at})")
+                            h_job.status = "error"
+                            h_job.error = f"Processing timeout exceeded ({timeout_minutes} mins). Automatic credit refund applied."
+                            h_job.completed_at = datetime.now(timezone.utc)
 
-                        with self.lock:
-                            if h_job.job_id in self.running_job_ids:
-                                self.running_job_ids.remove(h_job.job_id)
-                            if h_job.job_id in self.jobs:
-                                self.jobs[h_job.job_id]["status"] = "error"
-                                self.jobs[h_job.job_id]["error"] = h_job.error
+                            with self.lock:
+                                if h_job.job_id in self.running_job_ids:
+                                    self.running_job_ids.remove(h_job.job_id)
+                                if h_job.job_id in self.jobs:
+                                    self.jobs[h_job.job_id]["status"] = "error"
+                                    self.jobs[h_job.job_id]["error"] = h_job.error
 
-                        if h_job.credits_deducted and h_job.credits_deducted > 0:
-                            try:
-                                CreditService.refund_credits(
-                                    user_id=h_job.user_id,
-                                    reference_id=h_job.job_id,
-                                    reason=f"Processing timeout refund ({timeout_minutes}m limit)"
-                                )
-                            except Exception:
-                                pass
+                            if h_job.credits_deducted and h_job.credits_deducted > 0:
+                                try:
+                                    CreditService.refund_credits(
+                                        user_id=h_job.user_id,
+                                        reference_id=h_job.job_id,
+                                        reason=f"Processing timeout refund ({timeout_minutes}m limit)"
+                                    )
+                                except Exception:
+                                    pass
 
-                    if hung_jobs:
-                        session.commit()
-                    session.close()
+                        if hung_jobs:
+                            session.commit()
+                    finally:
+                        session.close()
                 except Exception as e:
                     print(f"[Supervisor] Warning during timeout check: {e}")
 

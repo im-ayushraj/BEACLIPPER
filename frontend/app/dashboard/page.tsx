@@ -139,9 +139,14 @@ export default function DashboardPage() {
 
           if (jobData.status === "completed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            setGeneratedClips(jobData.clips || []);
-            setSavedClips(jobData.clips || []);
+            const newClips = jobData.clips || [];
+            setGeneratedClips(newClips);
+            setSavedClips((prev) => {
+              const rest = prev.filter(
+                (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
+              );
+              return [...newClips, ...rest];
+            });
             refreshCreditsAndUsage();
           } else if (jobData.status === "error") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
@@ -193,9 +198,14 @@ export default function DashboardPage() {
 
           if (jobData.status === "completed") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
-            setIsProcessing(false);
-            setGeneratedClips(jobData.clips || []);
-            setSavedClips(jobData.clips || []);
+            const newClips = jobData.clips || [];
+            setGeneratedClips(newClips);
+            setSavedClips((prev) => {
+              const rest = prev.filter(
+                (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
+              );
+              return [...newClips, ...rest];
+            });
             refreshCreditsAndUsage();
           } else if (jobData.status === "error") {
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);

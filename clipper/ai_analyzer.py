@@ -322,7 +322,9 @@ def extract_gemini_response_text(response: Any) -> str:
 
 GROQ_MODELS = [
     "openai/gpt-oss-120b",
+    "llama-3.3-70b-versatile",
     "openai/gpt-oss-20b",
+    "llama-3.1-8b-instant",
     "qwen/qwen3.8-27b",
     "groq/compound",
 ]

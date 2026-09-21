@@ -213,11 +213,14 @@ def extract_audio(video_path: str, audio_output_path: str) -> str:
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            check=True
+            check=True,
+            timeout=120
         )
-    except subprocess.CalledProcessError as e:
+    except subprocess.CalledProcessError:
         # If libmp3lame fails, fallback to simple copy or default mp3
         fallback_cmd = [ffmpeg_bin, "-y", "-i", video_path, "-vn", audio_output_path]
-        subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+        subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        raise VideoDownloadError("Audio extraction timed out after 120 seconds.")
 
     return audio_output_path

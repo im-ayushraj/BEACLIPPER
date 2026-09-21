@@ -44,16 +44,20 @@ def cut_single_clip(
         output_path
     ]
 
-    proc = subprocess.run(
-        copy_cmd,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-        errors="replace"
-    )
+    try:
+        proc = subprocess.run(
+            copy_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            timeout=180
+        )
+    except subprocess.TimeoutExpired:
+        proc = None
 
     # 2. Check if output exists and is valid; if not, fallback to ultrafast re-encoding
-    if proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
+    if proc is None or proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
         if out_file.exists():
             try:
                 out_file.unlink(missing_ok=True)
@@ -77,16 +81,20 @@ def cut_single_clip(
             output_path
         ]
 
-        fallback_proc = subprocess.run(
-            encode_cmd,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            errors="replace"
-        )
+        try:
+            fallback_proc = subprocess.run(
+                encode_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                errors="replace",
+                timeout=180
+            )
+        except subprocess.TimeoutExpired:
+            raise VideoCuttingError(f"FFmpeg timed out while cutting clip at {output_path}")
 
         if fallback_proc.returncode != 0 or not out_file.exists() or out_file.stat().st_size < 500:
-            stderr_msg = fallback_proc.stderr or proc.stderr
+            stderr_msg = fallback_proc.stderr or (proc.stderr if proc else "Process timeout or error")
             raise VideoCuttingError(f"FFmpeg failed to create clip at {output_path}: {stderr_msg[:300]}")
 
 

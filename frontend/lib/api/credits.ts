@@ -48,11 +48,14 @@ export interface CreditPackage {
   price_cents: number;
 }
 
+import { getClientDeviceId } from "./client";
+
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "";
 
 function getHeaders(token?: string | null): Record<string, string> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    "X-Device-Id": getClientDeviceId(),
   };
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;

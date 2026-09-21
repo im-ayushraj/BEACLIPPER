@@ -5,7 +5,8 @@ import os
 import uuid
 import json
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Generator
+from contextlib import contextmanager
 
 from sqlalchemy import (
     create_engine,
@@ -199,13 +200,22 @@ def init_db():
 
     db_url = get_database_url()
     connect_args = {}
+    engine_kwargs: Dict[str, Any] = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
+
     if db_url.startswith("sqlite"):
         connect_args["check_same_thread"] = False
+    else:
+        # PostgreSQL (Supabase pooler / production) connection pool sizing
+        engine_kwargs["pool_size"] = 10
+        engine_kwargs["max_overflow"] = 20
 
     _engine = create_engine(
         db_url,
         connect_args=connect_args,
-        pool_pre_ping=True,
+        **engine_kwargs
     )
     _SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=_engine)
 
@@ -236,6 +246,20 @@ def get_db_session() -> Session:
     if _SessionLocal is None:
         init_db()
     return _SessionLocal()
+
+
+@contextmanager
+def get_db_context() -> Generator[Session, None, None]:
+    """Context manager ensuring automatic session commit, rollback on error, and guaranteed close."""
+    session = get_db_session()
+    try:
+        yield session
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
+    finally:
+        session.close()
 
 
 def seed_defaults():

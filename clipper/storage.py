@@ -293,28 +293,30 @@ def save_clips_to_db(
     try:
         from clipper.db import get_db_session, ClipModel
         s = get_db_session()
-        for c in clips:
-            file_name = c.get("file") or (os.path.basename(c.get("file_path", "")) if c.get("file_path") else "")
-            existing = s.query(ClipModel).filter_by(job_id=job_id, file_name=file_name).first()
-            if not existing:
-                clip_rec = ClipModel(
-                    job_id=job_id,
-                    user_id=user_id,
-                    file_name=file_name,
-                    title=c.get("title", ""),
-                    duration=float(c.get("duration", 0.0)),
-                    score=float(c.get("score", 8.0)),
-                    tags_json=json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else str(c.get("tags") or "[]"),
-                    explanation=c.get("explanation", ""),
-                    reason=c.get("reason", ""),
-                    start_time=float(c.get("start", 0.0)),
-                    end_time=float(c.get("end", 0.0)),
-                    storage_path=f"users/{user_id}/{file_name}",
-                    signed_url=c.get("download_url") or c.get("url") or c.get("signed_url")
-                )
-                s.add(clip_rec)
-        s.commit()
-        s.close()
+        try:
+            for c in clips:
+                file_name = c.get("file") or (os.path.basename(c.get("file_path", "")) if c.get("file_path") else "")
+                existing = s.query(ClipModel).filter_by(job_id=job_id, file_name=file_name).first()
+                if not existing:
+                    clip_rec = ClipModel(
+                        job_id=job_id,
+                        user_id=user_id,
+                        file_name=file_name,
+                        title=c.get("title", ""),
+                        duration=float(c.get("duration", 0.0)),
+                        score=float(c.get("score", 8.0)),
+                        tags_json=json.dumps(c.get("tags", [])) if isinstance(c.get("tags"), list) else str(c.get("tags") or "[]"),
+                        explanation=c.get("explanation", ""),
+                        reason=c.get("reason", ""),
+                        start_time=float(c.get("start", 0.0)),
+                        end_time=float(c.get("end", 0.0)),
+                        storage_path=f"users/{user_id}/{file_name}",
+                        signed_url=c.get("download_url") or c.get("url") or c.get("signed_url")
+                    )
+                    s.add(clip_rec)
+            s.commit()
+        finally:
+            s.close()
     except Exception as dbe:
         print(f"[DB] Warning saving clips to ClipModel: {dbe}")
 

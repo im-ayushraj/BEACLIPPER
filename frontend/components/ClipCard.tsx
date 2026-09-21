@@ -129,9 +129,9 @@ export function ClipCard({ clip, index, onDelete }: ClipCardProps) {
         {/* Tags */}
         {clip.tags && clip.tags.length > 0 && (
           <div className="flex flex-wrap gap-1">
-            {clip.tags.map((tag) => (
+            {clip.tags.map((tag, idx) => (
               <span
-                key={tag}
+                key={`${tag}-${idx}`}
                 className="rounded border border-white/[0.06] bg-white/[0.03] px-1.5 py-0.5 text-[10px] font-mono text-zinc-400"
               >
                 {tag}

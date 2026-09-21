@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, Suspense } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Loader2 } from "lucide-react";
 
@@ -19,13 +19,24 @@ export function PageLoader() {
   const [initialLoading, setInitialLoading] = useState(true);
   const [routeLoading, setRouteLoading] = useState(false);
   const [visible, setVisible] = useState(true);
+  const routeTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   const handleRouteChange = useCallback(() => {
     setRouteLoading(true);
-    const timer = setTimeout(() => {
+    if (routeTimerRef.current) {
+      clearTimeout(routeTimerRef.current);
+    }
+    routeTimerRef.current = setTimeout(() => {
       setRouteLoading(false);
     }, 280);
-    return () => clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (routeTimerRef.current) {
+        clearTimeout(routeTimerRef.current);
+      }
+    };
   }, []);
 
   // 1. Initial Page Load (Full screen curtain fade)
