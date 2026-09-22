@@ -5,6 +5,7 @@ import { Clip } from "@/types";
 import { ClipGrid } from "./ClipGrid";
 import { EmptyState } from "./EmptyState";
 import { Search, Film } from "lucide-react";
+import { getClipKey } from "@/lib/utils";
 
 interface MyClipsProps {
   clips: Clip[];
@@ -15,15 +16,13 @@ interface MyClipsProps {
 export function MyClips({ clips, onNewClip, onDeleteClip }: MyClipsProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Defensive deduplication by file or identifier
+  // Deduplicate clips uniquely by id or job_id + file
   const uniqueClips: Clip[] = [];
-  const seenIds = new Set<string>();
+  const seenKeys = new Set<string>();
   for (const c of clips) {
-    const cid = c.file || (c as any).id || (c as any).filename;
-    if (cid && !seenIds.has(cid)) {
-      seenIds.add(cid);
-      uniqueClips.push(c);
-    } else if (!cid) {
+    const key = getClipKey(c);
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
       uniqueClips.push(c);
     }
   }

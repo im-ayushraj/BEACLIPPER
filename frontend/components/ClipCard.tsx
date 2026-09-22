@@ -18,7 +18,7 @@ export function ClipCard({ clip, index, onDelete }: ClipCardProps) {
 
   // Backend video URL path: cloud signed URL or local FastAPI mount
   const rawUrl = (clip as any).url || (clip as any).signed_url || (clip as any).download_url;
-  const videoSrc = rawUrl || (clip.file ? `/output/${clip.file}` : "");
+  const videoSrc = rawUrl || (clip.job_id && clip.file ? `/output/jobs/${clip.job_id}/${clip.file}` : (clip.file ? `/output/${clip.file}` : ""));
 
   const clipNumber = String(index + 1).padStart(2, "0");
 

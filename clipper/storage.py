@@ -197,7 +197,7 @@ def upload_clip_to_storage(
     if not p.exists():
         return None
 
-    storage_path = f"users/{user_id}/{clip_name}"
+    storage_path = f"users/{user_id}/{job_id}/{clip_name}" if job_id else f"users/{user_id}/{clip_name}"
 
     # 1. Check S3 / Cloudflare R2
     if s3_storage.is_configured():
@@ -310,7 +310,7 @@ def save_clips_to_db(
                         reason=c.get("reason", ""),
                         start_time=float(c.get("start", 0.0)),
                         end_time=float(c.get("end", 0.0)),
-                        storage_path=f"users/{user_id}/{file_name}",
+                        storage_path=f"users/{user_id}/{job_id}/{file_name}" if job_id else f"users/{user_id}/{file_name}",
                         signed_url=c.get("download_url") or c.get("url") or c.get("signed_url")
                     )
                     s.add(clip_rec)
@@ -351,7 +351,7 @@ def save_clips_to_db(
                 "reason": c.get("reason", ""),
                 "start_time": c.get("start", 0.0),
                 "end_time": c.get("end", 0.0),
-                "storage_path": f"users/{user_id}/{file_name}",
+                "storage_path": f"users/{user_id}/{job_id}/{file_name}" if job_id else f"users/{user_id}/{file_name}",
                 "signed_url": c.get("download_url") or c.get("url") or c.get("signed_url")
             })
 

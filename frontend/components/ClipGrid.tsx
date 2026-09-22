@@ -6,6 +6,7 @@ import { ClipCard } from "./ClipCard";
 import { SlidersHorizontal, RefreshCw, CheckCircle2, Download, Loader2 } from "lucide-react";
 import { getClipsZipDownloadUrl } from "@/lib/api/client";
 import { useAppAuth } from "@/components/AuthComponents";
+import { getClipKey } from "@/lib/utils";
 
 interface ClipGridProps {
   clips: Clip[];
@@ -114,7 +115,7 @@ export function ClipGrid({ clips, videoTitle, jobId, onReset, onDeleteClip }: Cl
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         {sortedClips.map((clip, index) => (
           <ClipCard
-            key={clip.id || `${clip.job_id || "job"}-${clip.file || "clip"}-${clip.start ?? index}-${index}`}
+            key={getClipKey(clip)}
             clip={clip}
             index={index}
             onDelete={onDeleteClip}

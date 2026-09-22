@@ -210,9 +210,13 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         queue_manager.update_heartbeat(job_id, progress=job.get("progress_percent"), stage=job.get("stage"))
 
     try:
+        # Isolate output directory per job to prevent concurrent or consecutive jobs from overwriting files
+        job_output_dir = OUTPUT_DIR / "jobs" / job_id
+        job_output_dir.mkdir(parents=True, exist_ok=True)
+
         pipeline = ClipperPipeline(
             working_dir=TEMP_DIR,
-            output_dir=OUTPUT_DIR
+            output_dir=job_output_dir
         )
         result = pipeline.run(
             youtube_url=url if not source_file_path else None,
@@ -223,11 +227,17 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             burn_subtitles=job.get("subtitles", True)
         )
         all_clips = result.get("clips", [])
+        for c in all_clips:
+            c["job_id"] = job_id
+            if not c.get("id"):
+                c["id"] = f"{job_id}_{c.get('file', '')}"
 
         # 1. Cloud upload to Supabase / S3 if enabled BEFORE marking status as completed
         if is_supabase_enabled():
             for c in all_clips:
-                clip_file = OUTPUT_DIR / c.get("file", "")
+                clip_file = job_output_dir / c.get("file", "")
+                if not clip_file.exists():
+                    clip_file = OUTPUT_DIR / c.get("file", "")
                 if clip_file.exists():
                     try:
                         signed_url = upload_clip_to_storage(
@@ -251,7 +261,7 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         # 2. Guarantee every clip has a valid playable URL
         for c in all_clips:
             if not c.get("url"):
-                c["url"] = f"/output/{c.get('file', '')}"
+                c["url"] = f"/output/jobs/{job_id}/{c.get('file', '')}"
 
         # 3. Mark job as completed with fully populated URLs
         job["status"] = "completed"
@@ -321,7 +331,7 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
                             reason=c.get("reason", ""),
                             start_time=float(c.get("start", 0.0)),
                             end_time=float(c.get("end", 0.0)),
-                            storage_path=f"users/{user_id}/{c_file}",
+                            storage_path=f"users/{user_id}/{job_id}/{c_file}",
                             signed_url=c.get("url")
                         )
                         db_session.add(clip_rec)
@@ -332,16 +342,35 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
         except Exception as db_err:
             print(f"[DB] Warning saving job and usage: {db_err}")
 
-        # 3. Save per-user local clips archive (subject to 24h retention sweeper)
+        # 3. Save and accumulate per-user local clips archive (subject to 24h retention sweeper)
         try:
             user_dir = OUTPUT_DIR / "users" / user_id
             user_dir.mkdir(parents=True, exist_ok=True)
-            with open(user_dir / "clips.json", "w", encoding="utf-8") as f:
+            user_clips_file = user_dir / "clips.json"
+            existing_clips = []
+            if user_clips_file.exists():
+                try:
+                    with open(user_clips_file, "r", encoding="utf-8") as f:
+                        old_data = json.load(f)
+                    existing_clips = old_data.get("clips", [])
+                except Exception:
+                    existing_clips = []
+
+            # Merge and deduplicate by (job_id, file)
+            merged_clips = list(all_clips)
+            seen_set = {(c.get("job_id", job_id), c.get("file")) for c in all_clips}
+            for oc in existing_clips:
+                key = (oc.get("job_id"), oc.get("file"))
+                if key not in seen_set:
+                    seen_set.add(key)
+                    merged_clips.append(oc)
+
+            with open(user_clips_file, "w", encoding="utf-8") as f:
                 json.dump({
                     "user_id": user_id,
                     "video": result.get("video"),
-                    "clips": result.get("clips", []),
-                    "created_at": time.time()
+                    "clips": merged_clips,
+                    "updated_at": time.time()
                 }, f, indent=2)
         except Exception as e:
             print(f"Warning: Failed to save user clips: {e}")
@@ -999,12 +1028,20 @@ def get_saved_clips(
 
             # Fallback to local file path if signed_url still empty
             if not signed_url:
+                local_job = OUTPUT_DIR / "jobs" / r.job_id / r.file_name
+                local_u_job = OUTPUT_DIR / "users" / r.user_id / r.job_id / r.file_name
                 local_u = OUTPUT_DIR / "users" / r.user_id / r.file_name
                 local_root = OUTPUT_DIR / r.file_name
-                if local_u.exists():
+                if local_job.exists():
+                    signed_url = f"/output/jobs/{r.job_id}/{r.file_name}"
+                elif local_u_job.exists():
+                    signed_url = f"/output/users/{r.user_id}/{r.job_id}/{r.file_name}"
+                elif local_u.exists():
                     signed_url = f"/output/users/{r.user_id}/{r.file_name}"
                 elif local_root.exists():
                     signed_url = f"/output/{r.file_name}"
+                else:
+                    signed_url = f"/output/jobs/{r.job_id}/{r.file_name}"
 
             tags = []
             if r.tags_json:
@@ -1178,7 +1215,9 @@ def download_all_job_clips_zip(
 
     filenames = [c.get("file") for c in clips_list if c.get("file")]
 
-    target_dir = OUTPUT_DIR / "users" / job_user_id
+    target_dir = OUTPUT_DIR / "jobs" / job_id
+    if not target_dir.exists() or not any((target_dir / fn).exists() for fn in filenames):
+        target_dir = OUTPUT_DIR / "users" / job_user_id
     if not target_dir.exists() or not any((target_dir / fn).exists() for fn in filenames):
         target_dir = OUTPUT_DIR
 
@@ -1207,12 +1246,17 @@ def delete_clip_endpoint(
     deleted = False
     try:
         clip_rec = None
-        if clip_identifier.isdigit():
-            clip_rec = session.query(ClipModel).filter_by(id=int(clip_identifier)).first()
+        # 1. Query by primary key UUID
+        clip_rec = session.query(ClipModel).filter_by(id=clip_identifier).first()
+        # 2. Query by composite job_id_filename
+        if not clip_rec and "_" in clip_identifier and len(clip_identifier) > 36:
+            parts = clip_identifier.split("_", 1)
+            clip_rec = session.query(ClipModel).filter_by(job_id=parts[0], file_name=parts[1]).first()
+        # 3. Query by file_name scoped to user_id
         if not clip_rec:
             clip_rec = session.query(ClipModel).filter(
                 (ClipModel.file_name == clip_identifier) | (ClipModel.file_name == f"{clip_identifier}.mp4")
-            ).first()
+            ).filter(ClipModel.user_id == user_id).first()
 
         if clip_rec:
             if clip_rec.storage_path:
@@ -1227,11 +1271,19 @@ def delete_clip_endpoint(
                     print(f"[Delete] Cloud storage removal notice: {e}")
 
             file_name = clip_rec.file_name
+            target_job_id = clip_rec.job_id
             session.delete(clip_rec)
             session.commit()
             deleted = True
         else:
             file_name = os.path.basename(clip_identifier)
+            target_job_id = None
+
+        if target_job_id:
+            job_p = OUTPUT_DIR / "jobs" / target_job_id / file_name
+            if job_p.exists():
+                job_p.unlink(missing_ok=True)
+                deleted = True
 
         local_p = OUTPUT_DIR / file_name
         if local_p.exists():
@@ -1639,7 +1691,20 @@ def resolve_job_data(job_id: str) -> Optional[Dict[str, Any]]:
             clips_recs = db_s.query(ClipModel).filter_by(job_id=job_id).all()
             clips_list = []
             for c in clips_recs:
+                clip_url = c.signed_url
+                if not clip_url:
+                    local_job = OUTPUT_DIR / "jobs" / c.job_id / c.file_name
+                    local_root = OUTPUT_DIR / c.file_name
+                    if local_job.exists():
+                        clip_url = f"/output/jobs/{c.job_id}/{c.file_name}"
+                    elif local_root.exists():
+                        clip_url = f"/output/{c.file_name}"
+                    else:
+                        clip_url = f"/output/jobs/{c.job_id}/{c.file_name}"
+
                 clips_list.append({
+                    "id": c.id,
+                    "job_id": c.job_id,
                     "file": c.file_name,
                     "title": c.title,
                     "duration": c.duration,
@@ -1649,7 +1714,7 @@ def resolve_job_data(job_id: str) -> Optional[Dict[str, Any]]:
                     "reason": c.reason or "",
                     "start": c.start_time,
                     "end": c.end_time,
-                    "url": c.signed_url or f"/output/{c.file_name}",
+                    "url": clip_url,
                 })
             return {
                 "job_id": db_job.job_id,

@@ -21,6 +21,7 @@ import { ProcessingJob, Clip } from "@/types";
 import { Sparkles, ShieldCheck, Zap, AlertCircle, ArrowUpRight, Clock, Film, Video, CheckCircle2 } from "lucide-react";
 import { useAppAuth } from "@/components/AuthComponents";
 import { PricingModal } from "@/components/PricingModal";
+import { getClipKey } from "@/lib/utils";
 
 export default function DashboardPage() {
   const { getToken, userId } = useAppAuth();
@@ -84,12 +85,15 @@ export default function DashboardPage() {
     if (jobData.status === "completed") {
       stopTracking();
       setIsProcessing(false);
-      const newClips = jobData.clips || [];
+      const newClips = (jobData.clips || []).map((c) => ({
+        ...c,
+        job_id: c.job_id || jobData.job_id,
+      }));
       setGeneratedClips(newClips);
+      // Merge newly generated clips with saved clips preserving ALL previous jobs
       setSavedClips((prev) => {
-        const rest = prev.filter(
-          (p) => !newClips.some((n) => (n.file || (n as any).id) === (p.file || (p as any).id))
-        );
+        const newKeys = new Set(newClips.map((n) => getClipKey(n)));
+        const rest = prev.filter((p) => !newKeys.has(getClipKey(p)));
         return [...newClips, ...rest];
       });
       refreshCreditsAndUsage();
@@ -204,13 +208,13 @@ export default function DashboardPage() {
         // 2. Fetch user's saved clips
         const data = await getSavedClips(token);
         if (data && data.clips && data.clips.length > 0) {
-          // Deduplicate clips by file or identifier
+          // Deduplicate clips uniquely by id or job_id + file
           const uniqueClips: Clip[] = [];
-          const seenIds = new Set<string>();
+          const seenKeys = new Set<string>();
           for (const c of data.clips) {
-            const cid = c.file || (c as any).id || (c as any).filename;
-            if (cid && !seenIds.has(cid)) {
-              seenIds.add(cid);
+            const key = getClipKey(c);
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
               uniqueClips.push(c);
             }
           }
@@ -388,14 +392,15 @@ export default function DashboardPage() {
   };
 
   const handleDeleteClip = async (clipToDelete: Clip) => {
-    const identifier = clipToDelete.file || (clipToDelete as any).id || (clipToDelete as any).filename;
+    const targetKey = getClipKey(clipToDelete);
     // 1. Optimistic removal from UI state
-    setGeneratedClips((prev) => prev.filter((c) => (c.file || (c as any).id) !== identifier));
-    setSavedClips((prev) => prev.filter((c) => (c.file || (c as any).id) !== identifier));
+    setGeneratedClips((prev) => prev.filter((c) => getClipKey(c) !== targetKey));
+    setSavedClips((prev) => prev.filter((c) => getClipKey(c) !== targetKey));
 
     // 2. Persistent removal from server DB & storage
     try {
       const token = await getToken();
+      const identifier = clipToDelete.id || (clipToDelete.job_id && clipToDelete.file ? `${clipToDelete.job_id}_${clipToDelete.file}` : clipToDelete.file);
       await deleteClip(identifier, token);
     } catch (e) {
       console.warn("Delete clip backend call:", e);
