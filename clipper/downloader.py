@@ -22,7 +22,7 @@ class VideoDownloadError(Exception):
 
 
 class VideoDurationLimitExceeded(Exception):
-    """Raised when a video exceeds the maximum allowed duration (e.g. 35 minutes)."""
+    """Raised when a video exceeds the maximum allowed duration."""
     pass
 
 
@@ -31,7 +31,9 @@ class InvalidURLError(Exception):
     pass
 
 
-MAX_VIDEO_DURATION_SECONDS = 35 * 60  # 35 minutes (2100s)
+# Video duration limit: Default to 24 hours (86,400s) for testing (unlimited practical testing)
+# Can be configured via environment variable MAX_VIDEO_DURATION_SECONDS
+MAX_VIDEO_DURATION_SECONDS = int(os.getenv("MAX_VIDEO_DURATION_SECONDS", str(24 * 3600)))
 
 YOUTUBE_REGEX = re.compile(
     r"^(https?://)?(www\.|m\.)?(youtube\.com/(watch\?v=|shorts/|embed/)|youtu\.be/)([a-zA-Z0-9_-]{11})"

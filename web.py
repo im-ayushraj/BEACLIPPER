@@ -32,6 +32,7 @@ from clipper.security import (
     sanitize_upload_filename,
     validate_video_magic_bytes,
     validate_upload_size,
+    MAX_UPLOAD_SIZE_BYTES,
 )
 from clipper.downloader import (
     get_video_metadata_preflight,
@@ -521,8 +522,9 @@ def get_system_status():
         "retention_policy": "24_hours",
         "retention_seconds": 86400,
         "security": "clerk_jwks_verified",
-        "max_video_duration_minutes": 35,
+        "max_video_duration_minutes": int(MAX_VIDEO_DURATION_SECONDS / 60),
         "max_video_duration_seconds": MAX_VIDEO_DURATION_SECONDS,
+        "max_upload_size_bytes": MAX_UPLOAD_SIZE_BYTES,
         "queue": queue_manager.get_queue_stats()
     }
 
@@ -1540,19 +1542,20 @@ async def process_video_upload(
             }
         )
 
-    # 3. Stream upload file to disk with 500MB size safeguard
+    # 3. Stream upload file to disk with safeguard (MAX_UPLOAD_SIZE_BYTES)
     job_id = str(uuid.uuid4())
     safe_filename = sanitize_upload_filename(video.filename)
     upload_file_path = TEMP_DIR / f"{job_id}_{safe_filename}"
     bytes_written = 0
-    max_size = 500 * 1024 * 1024  # 500MB
+    max_size = MAX_UPLOAD_SIZE_BYTES
 
     try:
         with open(upload_file_path, "wb") as f:
             while chunk := await video.read(1024 * 1024):  # 1MB chunks
                 bytes_written += len(chunk)
                 if bytes_written > max_size:
-                    raise ValueError("File size limit exceeded: maximum allowed upload size is 500 MB.")
+                    max_mb = round(max_size / (1024 * 1024))
+                    raise ValueError(f"File size limit exceeded: maximum allowed upload size is {max_mb} MB.")
                 f.write(chunk)
     except Exception as e:
         upload_file_path.unlink(missing_ok=True)
@@ -2019,15 +2022,16 @@ async def start_split_video(
     safe_filename = sanitize_upload_filename(video.filename)
     temp_upload_path = SPLIT_TEMP_DIR / f"{job_id}_{safe_filename}"
     bytes_written = 0
-    max_size = 500 * 1024 * 1024  # 500MB
+    max_size = MAX_UPLOAD_SIZE_BYTES
 
-    # Stream write upload file to disk with 500MB size safeguard
+    # Stream write upload file to disk with safeguard (MAX_UPLOAD_SIZE_BYTES)
     try:
         with open(temp_upload_path, "wb") as f:
             while chunk := await video.read(1024 * 1024):  # 1MB chunks
                 bytes_written += len(chunk)
                 if bytes_written > max_size:
-                    raise ValueError("File size limit exceeded: maximum allowed upload size is 500 MB.")
+                    max_mb = round(max_size / (1024 * 1024))
+                    raise ValueError(f"File size limit exceeded: maximum allowed upload size is {max_mb} MB.")
                 f.write(chunk)
     except Exception as e:
         temp_upload_path.unlink(missing_ok=True)

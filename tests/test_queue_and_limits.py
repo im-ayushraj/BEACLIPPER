@@ -97,7 +97,7 @@ class TestDurationLimitPreflight(unittest.TestCase):
         }
 
         with self.assertRaises(VideoDurationLimitExceeded) as ctx:
-            get_video_metadata_preflight("https://www.youtube.com/watch?v=long1234567")
+            get_video_metadata_preflight("https://www.youtube.com/watch?v=long1234567", max_duration_seconds=35 * 60)
         self.assertIn("35-minute limit", str(ctx.exception))
 
 
@@ -107,11 +107,12 @@ class TestWebAPIHardening(unittest.TestCase):
         self.client = TestClient(app)
 
     def test_system_status_includes_limits_and_queue(self):
-        """Test /api/system/status returns 35-min limit and queue stats."""
+        """Test /api/system/status returns duration limit and queue stats."""
         res = self.client.get("/api/system/status")
         self.assertEqual(res.status_code, 200)
         data = res.json()
-        self.assertEqual(data["max_video_duration_minutes"], 35)
+        self.assertIn("max_video_duration_minutes", data)
+        self.assertIn("max_upload_size_bytes", data)
         self.assertIn("queue", data)
         self.assertEqual(data["queue"]["max_concurrent"], 2)
 

@@ -149,10 +149,6 @@ export function UrlInput({
       setInputError("Please select or drop a video file first.");
       return;
     }
-    if (detectedDuration && detectedDuration > 35 * 60) {
-      setInputError("Video exceeds the 35-minute duration limit. Please select a shorter video.");
-      return;
-    }
 
     setInputError(null);
     if (onUploadSubmit) {
@@ -497,7 +493,7 @@ export function UrlInput({
                 Drag and drop video file, or <span className="text-blue-400 underline underline-offset-2">browse</span>
               </p>
               <p className="text-[11px] text-zinc-500 mt-1 font-mono">
-                MP4, MOV, MKV, WebM, AVI (up to 35 minutes)
+                MP4, MOV, MKV, WebM, AVI (unlimited duration & file size for testing)
               </p>
             </div>
           ) : (

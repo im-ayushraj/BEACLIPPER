@@ -200,20 +200,26 @@ def validate_video_magic_bytes(file_path: str | os.PathLike) -> str:
     )
 
 
-def validate_upload_size(file_path: str | os.PathLike, max_size_bytes: int = 500 * 1024 * 1024) -> int:
+# Maximum upload size limit: Default to 100 GB for testing (effectively unlimited)
+# Can be configured via MAX_UPLOAD_SIZE_BYTES env variable
+MAX_UPLOAD_SIZE_BYTES = int(os.getenv("MAX_UPLOAD_SIZE_BYTES", str(100 * 1024 * 1024 * 1024)))
+
+
+def validate_upload_size(file_path: str | os.PathLike, max_size_bytes: Optional[int] = None) -> int:
     """
     Enforces maximum file size limit on uploaded video files.
-    Default limit is 500MB (524,288,000 bytes).
+    Default limit is 100GB for testing (configurable via MAX_UPLOAD_SIZE_BYTES).
     """
     from pathlib import Path
     p = Path(file_path)
     if not p.exists():
         raise ValueError("Uploaded file does not exist on disk.")
 
+    limit = max_size_bytes if max_size_bytes is not None else MAX_UPLOAD_SIZE_BYTES
     size = p.stat().st_size
-    if size > max_size_bytes:
+    if size > limit:
         size_mb = round(size / (1024 * 1024), 1)
-        max_mb = round(max_size_bytes / (1024 * 1024))
+        max_mb = round(limit / (1024 * 1024))
         raise ValueError(
             f"File size limit exceeded: Uploaded file is {size_mb} MB, but maximum allowed size is {max_mb} MB."
         )
