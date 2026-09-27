@@ -1595,7 +1595,8 @@ async def process_video_upload(
         "title": video.filename or "Uploaded Video",
         "duration": dur,
         "width": meta.get("width", 0),
-        "height": meta.get("height", 0)
+        "height": meta.get("height", 0),
+        "has_audio": meta.get("has_audio", True)
     }
 
     # 5. Credit Solvency Check & Atomic Deduction

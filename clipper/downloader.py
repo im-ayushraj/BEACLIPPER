@@ -196,19 +196,40 @@ def download_video(
     }
 
 
-def extract_audio(video_path: str, audio_output_path: str) -> str:
-    """Extract audio track from video as 16kHz mono mp3 using FFmpeg."""
+def extract_audio(video_path: str, audio_output_path: str) -> Optional[str]:
+    """
+    Extract audio track from video as 16kHz mono mp3 using FFmpeg.
+    Returns audio_output_path if audio was extracted, or None if video contains no audio track.
+    """
     ffmpeg_bin = get_ffmpeg_path()
+
+    # Pre-flight check: verify video contains at least one audio stream
+    probe_cmd = [ffmpeg_bin, "-hide_banner", "-i", str(video_path)]
+    try:
+        proc = subprocess.run(
+            probe_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            timeout=15
+        )
+        if not re.search(r"Stream #\d+:\d+.*Audio:", proc.stderr or ""):
+            # Video contains no audio stream (silent/gameplay video)
+            return None
+    except Exception:
+        pass
+
     cmd = [
         ffmpeg_bin,
         "-y",
-        "-i", video_path,
+        "-i", str(video_path),
         "-vn",
         "-acodec", "libmp3lame",
         "-ar", "16000",
         "-ac", "1",
         "-q:a", "4",
-        audio_output_path
+        str(audio_output_path)
     ]
     try:
         subprocess.run(
@@ -218,11 +239,14 @@ def extract_audio(video_path: str, audio_output_path: str) -> str:
             check=True,
             timeout=120
         )
+        return str(audio_output_path)
     except subprocess.CalledProcessError:
         # If libmp3lame fails, fallback to simple copy or default mp3
-        fallback_cmd = [ffmpeg_bin, "-y", "-i", video_path, "-vn", audio_output_path]
-        subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=120)
+        fallback_cmd = [ffmpeg_bin, "-y", "-i", str(video_path), "-vn", str(audio_output_path)]
+        try:
+            subprocess.run(fallback_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True, timeout=120)
+            return str(audio_output_path)
+        except subprocess.CalledProcessError:
+            return None
     except subprocess.TimeoutExpired:
         raise VideoDownloadError("Audio extraction timed out after 120 seconds.")
-
-    return audio_output_path

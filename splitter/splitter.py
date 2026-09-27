@@ -105,6 +105,9 @@ def probe_video_metadata(video_path: str | Path) -> Dict[str, Any]:
         height = 1080
         resolution_str = "Unknown"
 
+    # Detect if audio stream exists
+    has_audio = bool(re.search(r"Stream #\d+:\d+.*Audio:", err))
+
     return {
         "filename": path.name,
         "duration": duration_seconds,
@@ -114,6 +117,7 @@ def probe_video_metadata(video_path: str | Path) -> Dict[str, Any]:
         "resolution": resolution_str,
         "size_bytes": size_bytes,
         "size_formatted": format_bytes(size_bytes),
+        "has_audio": has_audio,
     }
 
 

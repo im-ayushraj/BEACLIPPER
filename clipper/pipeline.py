@@ -96,31 +96,53 @@ class ClipperPipeline:
         # 1. Acquire video & extract audio track
         if source_video_path:
             vpath = Path(source_video_path).resolve()
-            notify("video", "Processing uploaded video and extracting audio track...")
+            notify("video", "Processing uploaded video and checking media streams...")
             meta = probe_video_metadata(vpath)
+            has_audio = meta.get("has_audio", True)
             vid_id = f"upload_{vpath.stem[:12]}"
             title = vpath.stem.replace("_", " ").title()
-            audio_path = self.working_dir / f"{vid_id}.mp3"
-            if not audio_path.exists():
-                extract_audio(str(vpath), str(audio_path))
+            audio_path = None
+            if has_audio:
+                candidate_audio_path = self.working_dir / f"{vid_id}.mp3"
+                if not candidate_audio_path.exists():
+                    res = extract_audio(str(vpath), str(candidate_audio_path))
+                    if res and candidate_audio_path.exists():
+                        audio_path = str(candidate_audio_path)
+                else:
+                    audio_path = str(candidate_audio_path)
+
             video_info = {
                 "id": vid_id,
                 "title": title,
                 "duration": float(meta.get("duration", 0.0)),
                 "video_path": str(vpath),
-                "audio_path": str(audio_path),
+                "audio_path": audio_path,
+                "has_audio": bool(audio_path),
                 "is_local_file": True
             }
-            notify("video_done", f"Uploaded video '{title}' ready ({int(video_info['duration']/60)} mins).")
+            if not video_info["has_audio"]:
+                notify("video_done", f"Uploaded video '{title}' ready ({int(video_info['duration']/60)} mins, silent/no audio track).")
+            else:
+                notify("video_done", f"Uploaded video '{title}' ready ({int(video_info['duration']/60)} mins).")
         else:
-            notify("video", "Downloading video and extracting audio...")
+            notify("video", "Downloading video and checking audio...")
             video_info = download_video(youtube_url, self.working_dir)
             video_info["is_local_file"] = False
+            try:
+                probe_meta = probe_video_metadata(video_info["video_path"])
+                video_info["has_audio"] = probe_meta.get("has_audio", True)
+                if not video_info["has_audio"]:
+                    video_info["audio_path"] = None
+            except Exception:
+                video_info["has_audio"] = True
             notify("video_done", f"Video '{video_info['title']}' ready ({int(video_info.get('duration', 0)/60)} mins).")
 
         # 2. Get timestamped transcript (or attempt lazy extraction)
         segments: List[Dict[str, Any]] = []
-        if precomputed_transcript:
+        if not video_info.get("has_audio", True):
+            notify("transcript", "Video has no audio track. Skipping speech transcription.")
+            segments = []
+        elif precomputed_transcript:
             segments = precomputed_transcript
             notify("transcript_done", f"Reusing verified transcript with {len(segments)} segments.")
         else:
@@ -211,7 +233,7 @@ class ClipperPipeline:
                 audio_signals = detect_local_audio_signals(
                     audio_or_video_path=video_info.get("audio_path") or video_info["video_path"],
                     duration=v_dur,
-                    has_audio=bool(video_info.get("audio_path"))
+                    has_audio=bool(video_info.get("has_audio", True) and video_info.get("audio_path"))
                 )
 
                 notify("analysis", f"Detected {len(visual_signals)} visual cues & {len(audio_signals)} audio events. Generating candidate windows...")

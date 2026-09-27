@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -339,6 +340,32 @@ class TestMultimodalCache(unittest.TestCase):
 
         self.assertIsNotNone(retrieved)
         self.assertEqual(retrieved["candidates"][0]["id"], 1)
+
+    def test_probe_video_metadata_and_extract_audio_on_silent_video(self):
+        """Verify probe_video_metadata detects has_audio=False and extract_audio returns None."""
+        import subprocess
+        import tempfile
+        from clipper.downloader import get_ffmpeg_path, extract_audio
+        from splitter.splitter import probe_video_metadata
+        from clipper.multimodal import detect_local_audio_signals
+
+        with tempfile.TemporaryDirectory() as td:
+            ffmpeg = get_ffmpeg_path()
+            silent_vid = Path(td) / "unit_silent.mp4"
+            cmd = [ffmpeg, "-y", "-f", "lavfi", "-i", "color=c=black:s=160x120:d=2", "-c:v", "libx264", str(silent_vid)]
+            subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
+
+            meta = probe_video_metadata(silent_vid)
+            self.assertIn("has_audio", meta)
+            self.assertFalse(meta["has_audio"])
+
+            audio_out = Path(td) / "unit_audio.mp3"
+            res = extract_audio(str(silent_vid), str(audio_out))
+            self.assertIsNone(res)
+
+            # detect_local_audio_signals returns empty list without error
+            signals = detect_local_audio_signals(silent_vid, duration=2.0, has_audio=False)
+            self.assertEqual(signals, [])
 
 
 if __name__ == "__main__":

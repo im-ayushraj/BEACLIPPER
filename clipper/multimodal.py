@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Tuple
 
 from splitter.splitter import probe_video_metadata
+from clipper.downloader import get_ffmpeg_path
 
 
 # Configurable Environment Constants
@@ -158,8 +159,9 @@ def detect_local_visual_signals(
     # 1. Probe scene score metadata via FFmpeg select='gt(scene,0.15)'
     # Downscale to 160x90 and limit framerate to fps=1/sample_interval for lightning speed
     fps_val = f"1/{max(1.0, sample_interval)}"
+    ffmpeg_bin = get_ffmpeg_path()
     cmd = [
-        "ffmpeg", "-hide_banner", "-v", "error",
+        ffmpeg_bin, "-hide_banner", "-v", "error",
         "-i", vpath,
         "-vf", f"fps={fps_val},scale=160:90,select='gt(scene,0.15)',metadata=print:key=lavfi.scene_score:file=-",
         "-f", "null", "-"
@@ -229,9 +231,9 @@ def detect_local_audio_signals(
     audio_signals: List[Dict[str, float]] = []
 
     # Use FFmpeg silencedetect / volumedetect to identify loud intervals and transitions
-    # silencedetect finds where audio transitions from quiet to loud
+    ffmpeg_bin = get_ffmpeg_path()
     cmd = [
-        "ffmpeg", "-hide_banner", "-vn",
+        ffmpeg_bin, "-hide_banner", "-vn",
         "-i", path_str,
         "-af", "silencedetect=noise=-28dB:d=1.5",
         "-f", "null", "-"
@@ -239,6 +241,8 @@ def detect_local_audio_signals(
 
     try:
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+        if proc.returncode != 0:
+            return []
         output = proc.stdout + proc.stderr
 
         # Matches: [silencedetect @ ...] silence_end: 125.4 | silence_duration: 3.2
@@ -514,8 +518,9 @@ def extract_sparse_candidate_frames(
         frame_file = out_dir / frame_name
 
         # Fast FFmpeg seek to timestamp and extract 1 scaled frame
+        ffmpeg_bin = get_ffmpeg_path()
         cmd = [
-            "ffmpeg", "-hide_banner", "-v", "error", "-y",
+            ffmpeg_bin, "-hide_banner", "-v", "error", "-y",
             "-ss", f"{ts:.2f}",
             "-i", vpath,
             "-vframes", "1",
