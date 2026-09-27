@@ -5,8 +5,28 @@ import { Sparkles, Loader2, Zap, Upload, Film, FileVideo, X, CheckCircle2, Capti
 import { cn, formatTime } from "@/lib/utils";
 
 interface UrlInputProps {
-  onSubmit: (url: string, count: number, aspectRatio?: string, subtitles?: boolean) => void;
-  onUploadSubmit?: (file: File, count: number, aspectRatio?: string, subtitles?: boolean) => void;
+  onSubmit: (
+    url: string,
+    count: number,
+    aspectRatio?: string,
+    subtitles?: boolean,
+    mode?: string,
+    instruction?: string,
+    preset?: string,
+    minDuration?: number,
+    maxDuration?: number
+  ) => void;
+  onUploadSubmit?: (
+    file: File,
+    count: number,
+    aspectRatio?: string,
+    subtitles?: boolean,
+    mode?: string,
+    instruction?: string,
+    preset?: string,
+    minDuration?: number,
+    maxDuration?: number
+  ) => void;
   isLoading: boolean;
   uploadProgress?: number;
   disabled?: boolean;
@@ -24,6 +44,11 @@ export function UrlInput({
   const [clipCount, setClipCount] = useState<number>(10);
   const [aspectRatio, setAspectRatio] = useState<"original" | "vertical_9_16">("original");
   const [subtitles, setSubtitles] = useState<boolean>(true);
+  const [clippingMode, setClippingMode] = useState<"AUTO" | "GUIDED">("AUTO");
+  const [guidedPreset, setGuidedPreset] = useState<string>("Funny");
+  const [guidedInstruction, setGuidedInstruction] = useState<string>("");
+  const [minDuration, setMinDuration] = useState<number>(30);
+  const [maxDuration, setMaxDuration] = useState<number>(60);
   const [inputError, setInputError] = useState<string | null>(null);
 
   // Upload tab state
@@ -58,7 +83,17 @@ export function UrlInput({
     }
 
     setInputError(null);
-    onSubmit(cleanUrl, clipCount, aspectRatio, subtitles);
+    onSubmit(
+      cleanUrl,
+      clipCount,
+      aspectRatio,
+      subtitles,
+      clippingMode,
+      guidedInstruction.trim() || undefined,
+      guidedPreset,
+      minDuration,
+      maxDuration
+    );
   };
 
   const handleFileSelect = (file: File) => {
@@ -121,7 +156,17 @@ export function UrlInput({
 
     setInputError(null);
     if (onUploadSubmit) {
-      onUploadSubmit(selectedFile, clipCount, aspectRatio, subtitles);
+      onUploadSubmit(
+        selectedFile,
+        clipCount,
+        aspectRatio,
+        subtitles,
+        clippingMode,
+        guidedInstruction.trim() || undefined,
+        guidedPreset,
+        minDuration,
+        maxDuration
+      );
     }
   };
 
@@ -271,6 +316,85 @@ export function UrlInput({
             </span>
           </button>
         </div>
+      </div>
+
+      {/* Mode Selector: AI Decides vs Guided AI */}
+      <div className="mb-4 rounded-lg border border-white/[0.08] bg-[#0c0e12]/80 p-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-white">Clipping Mode:</span>
+            <span className="text-[11px] text-zinc-400">
+              {clippingMode === "AUTO" ? "AI automatically detects top visual, audio & speech moments" : "Direct AI with custom instructions & presets"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-1 self-start sm:self-auto rounded border border-white/[0.08] bg-[#111319] p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setClippingMode("AUTO")}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition",
+                clippingMode === "AUTO" ? "bg-white/10 text-white font-semibold shadow-xs" : "text-zinc-400 hover:text-white"
+              )}
+            >
+              AI Decides
+            </button>
+            <button
+              type="button"
+              onClick={() => setClippingMode("GUIDED")}
+              disabled={disabled || isLoading}
+              className={cn(
+                "rounded px-2.5 py-1 font-medium transition flex items-center gap-1",
+                clippingMode === "GUIDED"
+                  ? "bg-purple-600/25 text-purple-300 font-semibold border border-purple-500/30"
+                  : "text-zinc-400 hover:text-white"
+              )}
+            >
+              <Sparkles className="h-3 w-3 text-purple-400" />
+              <span>Guided AI</span>
+            </button>
+          </div>
+        </div>
+
+        {clippingMode === "GUIDED" && (
+          <div className="mt-3 flex flex-col gap-2.5 border-t border-white/[0.06] pt-3">
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[11px] text-zinc-400 mr-1">Presets:</span>
+              {["Funny", "Action", "Fails", "Wins", "Unexpected", "Best Moments", "Custom"].map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setGuidedPreset(p)}
+                  disabled={disabled || isLoading}
+                  className={cn(
+                    "rounded px-2 py-0.5 text-[11px] font-medium transition border",
+                    guidedPreset === p
+                      ? "bg-purple-500/20 border-purple-400/50 text-purple-200 font-semibold"
+                      : "border-white/[0.08] bg-white/[0.02] text-zinc-400 hover:text-white"
+                  )}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+              <input
+                type="text"
+                value={guidedInstruction}
+                onChange={(e) => setGuidedInstruction(e.target.value)}
+                disabled={disabled || isLoading}
+                placeholder="What should AI focus on? (e.g. funny GTA 5 crashes, insane sniper shots, hilarious NPC reactions)"
+                className="h-9 flex-1 rounded border border-white/[0.08] bg-[#111319] px-3 text-xs text-white placeholder-zinc-500 outline-none transition focus:border-purple-500/40"
+              />
+              <div className="flex items-center gap-1.5 self-end sm:self-auto text-[11px] text-zinc-400">
+                <span>Duration:</span>
+                <span className="font-mono text-zinc-300">30s - 60s</span>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* TAB 1: YOUTUBE URL INPUT */}

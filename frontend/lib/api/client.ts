@@ -29,7 +29,12 @@ export async function processVideo(
   count: number = 10,
   token?: string | null,
   aspectRatio: string = "original",
-  subtitles: boolean = true
+  subtitles: boolean = true,
+  mode: string = "AUTO",
+  instruction?: string,
+  preset?: string,
+  minDuration?: number,
+  maxDuration?: number
 ): Promise<{ job_id: string; status: string }> {
   const trimmedUrl = url.trim();
   if (!trimmedUrl) {
@@ -48,7 +53,17 @@ export async function processVideo(
     const res = await fetch(`${BASE_URL}/api/process`, {
       method: "POST",
       headers,
-      body: JSON.stringify({ url: trimmedUrl, count, aspect_ratio: aspectRatio, subtitles }),
+      body: JSON.stringify({
+        url: trimmedUrl,
+        count,
+        aspect_ratio: aspectRatio,
+        subtitles,
+        mode,
+        instruction,
+        preset,
+        min_duration: minDuration,
+        max_duration: maxDuration,
+      }),
     });
 
     if (!res.ok) {
@@ -71,7 +86,12 @@ export async function uploadAndProcessVideo(
   token?: string | null,
   onProgress?: (percent: number) => void,
   aspectRatio: string = "original",
-  subtitles: boolean = true
+  subtitles: boolean = true,
+  mode: string = "AUTO",
+  instruction?: string,
+  preset?: string,
+  minDuration?: number,
+  maxDuration?: number
 ): Promise<{ job_id: string; status: string }> {
   return new Promise((resolve, reject) => {
     const formData = new FormData();
@@ -79,6 +99,11 @@ export async function uploadAndProcessVideo(
     formData.append("count", count.toString());
     formData.append("aspect_ratio", aspectRatio);
     formData.append("subtitles", subtitles ? "true" : "false");
+    formData.append("mode", mode);
+    if (instruction) formData.append("instruction", instruction);
+    if (preset) formData.append("preset", preset);
+    if (minDuration) formData.append("min_duration", minDuration.toString());
+    if (maxDuration) formData.append("max_duration", maxDuration.toString());
 
     const xhr = new XMLHttpRequest();
     const targetUrl = `${BASE_URL}/api/process-upload`;

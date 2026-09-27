@@ -6,12 +6,24 @@ from pathlib import Path
 from typing import Dict, Any, List, Optional, Callable
 
 from clipper.downloader import download_video, extract_audio
-from clipper.transcriber import get_transcript
-from clipper.ai_analyzer import find_important_moments
+from clipper.transcriber import get_transcript, TranscriptionError
+from clipper.ai_analyzer import find_important_moments, analyze_multimodal_candidates_batched
 from clipper.verifier import verify_all_candidates
 from clipper.ranker import rank_and_deduplicate
 from clipper.cutter import generate_clips
 from clipper.cleanup import cleanup_temp_video_files
+from clipper.multimodal import (
+    evaluate_transcript_usefulness,
+    get_adaptive_sample_interval,
+    detect_local_visual_signals,
+    detect_local_audio_signals,
+    generate_candidate_windows,
+    extract_sparse_candidate_frames,
+    analysis_cache,
+    STATE_TRANSCRIPT_AVAILABLE,
+    STATE_NO_USEFUL_TRANSCRIPT,
+    STATE_TRANSCRIPT_PARTIAL,
+)
 from splitter.splitter import probe_video_metadata
 
 
@@ -49,10 +61,16 @@ class ClipperPipeline:
         count: Optional[int] = None,
         aspect_ratio: str = "original",
         burn_subtitles: bool = True,
+        mode: str = "AUTO",
+        instruction: Optional[str] = None,
+        preset: Optional[str] = None,
+        min_duration: float = 30.0,
+        max_duration: float = 60.0,
     ) -> Dict[str, Any]:
         """
         Execute the full pipeline for a YouTube URL or directly uploaded video file.
-        status_callback(stage, message) can be used to track progress.
+        Supports AUTO and GUIDED modes, dual Groq and Gemini engines,
+        and automatic routing between transcript semantic analysis and multimodal visual/audio intelligence.
         """
         import time
 
@@ -68,6 +86,7 @@ class ClipperPipeline:
             "transcription_seconds": 0.0,
             "llm_calls": 0,
             "retries": 0,
+            "analysis_mode": "auto",
         }
 
         def notify(stage: str, msg: str):
@@ -99,73 +118,178 @@ class ClipperPipeline:
             video_info["is_local_file"] = False
             notify("video_done", f"Video '{video_info['title']}' ready ({int(video_info.get('duration', 0)/60)} mins).")
 
-        # 2. Get timestamped transcript (or reuse precomputed)
+        # 2. Get timestamped transcript (or attempt lazy extraction)
+        segments: List[Dict[str, Any]] = []
         if precomputed_transcript:
             segments = precomputed_transcript
             notify("transcript_done", f"Reusing verified transcript with {len(segments)} segments.")
         else:
-            notify("transcript", "Extracting timestamped transcript across entire video...")
+            notify("transcript", "Checking for spoken audio transcript across video...")
             t_start = time.time()
-            transcript_data = get_transcript(
-                video_id=video_info["id"],
-                audio_path=video_info["audio_path"],
-                gemini_api_key=self.gemini_api_key,
-                groq_api_key=self.groq_api_key,
-                is_local_file=video_info.get("is_local_file", False),
-                video_path=video_info.get("video_path"),
+            try:
+                transcript_data = get_transcript(
+                    video_id=video_info["id"],
+                    audio_path=video_info.get("audio_path"),
+                    gemini_api_key=self.gemini_api_key,
+                    groq_api_key=self.groq_api_key,
+                    is_local_file=video_info.get("is_local_file", False),
+                    video_path=video_info.get("video_path"),
+                )
+                segments = transcript_data.get("segments", [])
+                metrics["transcription_seconds"] = round(time.time() - t_start, 2)
+                metrics["transcription_calls"] = 1
+                notify("transcript_done", f"Retrieved {len(segments)} transcript segments.")
+            except Exception as tr_err:
+                print(f"[Pipeline] Transcript retrieval notice: {tr_err}. Proceeding to multimodal evaluation.")
+                segments = []
+
+        # 3. Evaluate transcript usefulness
+        v_dur = float(video_info.get("duration", 0.0))
+        usefulness = evaluate_transcript_usefulness(segments, v_dur)
+        metrics["transcript_status"] = usefulness["status"]
+        metrics["speech_ratio"] = usefulness["speech_ratio"]
+
+        # 4. Route: Transcript-based OR Multimodal Visual/Audio Intelligence
+        if usefulness["status"] == STATE_TRANSCRIPT_AVAILABLE:
+            metrics["analysis_mode"] = "transcript_semantic"
+            notify("analysis", f"AI scanning full transcript for top {target_clip_count}+ viral moments...")
+            raw_candidates = find_important_moments(
+                segments=segments,
+                gemini_key=self.gemini_api_key,
+                openai_key=self.openai_api_key,
+                groq_key=self.groq_api_key,
+                target_clip_count=target_clip_count,
+                progress_callback=lambda msg: notify("analysis", msg),
+                metrics_collector=metrics
             )
-            segments = transcript_data["segments"]
-            metrics["transcription_seconds"] = round(time.time() - t_start, 2)
-            metrics["transcription_calls"] = 1
-            notify("transcript_done", f"Retrieved {len(segments)} transcript segments covering full video.")
 
-        # 3. AI finds important moments across the whole video
-        notify("analysis", f"AI scanning full transcript for top {target_clip_count}+ viral moments...")
-        raw_candidates = find_important_moments(
-            segments=segments,
-            gemini_key=self.gemini_api_key,
-            openai_key=self.openai_api_key,
-            groq_key=self.groq_api_key,
-            target_clip_count=target_clip_count,
-            progress_callback=lambda msg: notify("analysis", msg),
-            metrics_collector=metrics
-        )
+            # Context verification & 30-60s timestamp adjustment
+            notify("analysis", "Verifying sentence context, complete thoughts, and 30-60s durations...")
+            verified_candidates = verify_all_candidates(
+                candidates=raw_candidates,
+                segments=segments,
+                video_duration=video_info.get("duration")
+            )
 
-        # 4. Context verification & 30-60s timestamp adjustment
-        notify("analysis", "Verifying sentence context, complete thoughts, and 30-60s durations...")
-        verified_candidates = verify_all_candidates(
-            candidates=raw_candidates,
-            segments=segments,
-            video_duration=video_info.get("duration")
-        )
+            # Rank and deduplicate across entire timeline
+            notify("analysis", f"Selecting top {target_clip_count} diverse clips distributed across the video...")
+            top_candidates = rank_and_deduplicate(
+                candidates=verified_candidates,
+                target_count=target_clip_count,
+                ensure_timeline_diversity=True
+            )
+        else:
+            # 4B. MULTIMODAL VISUAL & AUDIO INTELLIGENCE (No useful speech / Action / Gaming)
+            metrics["analysis_mode"] = "multimodal_visual_audio"
+            notify("analysis", "No useful speech detected. Activating visual & audio multimodal intelligence...")
 
-        # 5. Rank and deduplicate across entire timeline (select top diverse clips)
-        notify("analysis", f"Selecting top {target_clip_count} diverse clips distributed across the video...")
-        top_candidates = rank_and_deduplicate(
-            candidates=verified_candidates,
-            target_count=target_clip_count,
-            ensure_timeline_diversity=True
-        )
+            cache_config = {
+                "min_duration": min_duration,
+                "max_duration": max_duration,
+                "mode": mode,
+                "preset": preset,
+                "instruction": instruction
+            }
+            cached_data = analysis_cache.get(video_info.get("id", ""), cache_config)
+
+            if cached_data and cached_data.get("candidates"):
+                notify("analysis", "Reusing cached multimodal video candidate analysis...")
+                top_candidates = cached_data["candidates"]
+                metrics["cache_hit"] = True
+            else:
+                metrics["cache_hit"] = False
+                notify("analysis", "Analyzing video visual scenes and audio energy bursts...")
+                interval = get_adaptive_sample_interval(v_dur)
+                metrics["sample_interval"] = interval
+
+                # Local cheap signal detection
+                visual_signals = detect_local_visual_signals(
+                    video_path=video_info["video_path"],
+                    duration=v_dur,
+                    sample_interval=interval
+                )
+                audio_signals = detect_local_audio_signals(
+                    audio_or_video_path=video_info.get("audio_path") or video_info["video_path"],
+                    duration=v_dur,
+                    has_audio=bool(video_info.get("audio_path"))
+                )
+
+                notify("analysis", f"Detected {len(visual_signals)} visual cues & {len(audio_signals)} audio events. Generating candidate windows...")
+                local_candidates = generate_candidate_windows(
+                    visual_signals=visual_signals,
+                    audio_signals=audio_signals,
+                    video_duration=v_dur,
+                    min_clip_duration=min_duration,
+                    max_clip_duration=max_duration,
+                    has_transcript=bool(segments)
+                )
+
+                metrics["local_candidates_count"] = len(local_candidates)
+                notify("analysis", f"Selected {len(local_candidates)} top candidate moments. Extracting sparse frames...")
+
+                # Extract sparse representative frames for top candidates
+                frames_dir = self.working_dir / "cand_frames" / str(video_info["id"])
+                frames_dir.mkdir(parents=True, exist_ok=True)
+                candidate_frames_map = {}
+                for cand in local_candidates:
+                    candidate_frames_map[cand["id"]] = extract_sparse_candidate_frames(
+                        video_path=video_info["video_path"],
+                        candidate=cand,
+                        output_dir=frames_dir / f"cand_{cand['id']}",
+                        frame_count=4,
+                        max_width=768
+                    )
+
+                # Batched Gemini Vision analysis
+                notify("analysis", f"Sending {len(local_candidates)} candidate frame sets to Gemini Vision...")
+                evaluated_cands = analyze_multimodal_candidates_batched(
+                    candidates=local_candidates,
+                    candidate_frames_map=candidate_frames_map,
+                    video_duration=v_dur,
+                    guided_instruction=instruction,
+                    preset=preset,
+                    target_count=actual_count,
+                    gemini_key=self.gemini_api_key,
+                    groq_key=self.groq_api_key,
+                    min_duration=min_duration,
+                    max_duration=max_duration,
+                    progress_callback=lambda msg: notify("analysis", msg),
+                    metrics_collector=metrics
+                )
+
+                # Rank and deduplicate
+                top_candidates = rank_and_deduplicate(
+                    candidates=evaluated_cands,
+                    target_count=actual_count,
+                    ensure_timeline_diversity=True
+                )
+
+                # Store in cache
+                analysis_cache.set(video_info.get("id", ""), {"candidates": top_candidates}, cache_config)
+
+            # Subtitles should not burn if no valid speech segments exist
+            if not segments or usefulness["status"] == STATE_NO_USEFUL_TRANSCRIPT:
+                burn_subtitles = False
 
         if not top_candidates:
-            t_start = segments[0]["start"]
-            t_end = min(segments[-1]["end"], t_start + 45.0)
-            if t_end - t_start < 30.0 and video_info.get("duration", 0) >= 30:
-                t_end = t_start + 30.0
+            t_start = 0.0
+            t_end = min(v_dur, 45.0)
+            if t_end - t_start < 25.0 and v_dur >= 25.0:
+                t_end = t_start + 25.0
             top_candidates = [{
                 "start": t_start,
                 "end": t_end,
                 "duration": round(t_end - t_start, 2),
-                "score": 8.5,
+                "score": 8.0,
                 "title": f"Highlight from {video_info.get('title', 'Video')}",
                 "tags": ["#shorts", "#highlights", "#viral"],
-                "explanation": "Key opening moment from the video covering the core concept.",
+                "explanation": "Key opening moment from the video.",
                 "reason": "Top segment from video"
             }]
 
         notify("analysis_done", f"Selected {len(top_candidates)} optimal clips with full titles, tags & explanations.")
 
-        # 6. FFmpeg creates clips and clips.json using stream-copy & parallel processing
+        # 5. FFmpeg creates clips and clips.json using stream-copy & parallel processing
         sub_msg = " with animated subtitles" if burn_subtitles else ""
         notify("clips", f"Generating {len(top_candidates)} video clips{sub_msg} using high-speed FFmpeg...")
         clips_result = generate_clips(

@@ -1,5 +1,15 @@
 export type StepStatus = "pending" | "processing" | "completed" | "error";
 
+export type ClippingMode = "AUTO" | "GUIDED";
+
+export interface GuidedOptions {
+  mode?: ClippingMode;
+  instruction?: string;
+  preset?: string;
+  min_duration?: number;
+  max_duration?: number;
+}
+
 export interface ProcessingStep {
   label: string;
   status: StepStatus;

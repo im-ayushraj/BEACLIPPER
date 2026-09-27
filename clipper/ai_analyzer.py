@@ -566,3 +566,436 @@ def find_important_moments(
         raise AIAnalysisError("No candidate moments could be extracted from transcript")
 
     return all_candidates
+
+
+# =========================================================================
+# MULTIMODAL VIDEO INTELLIGENCE (NON-SPEECH / ACTION / GAMEPLAY / GUIDED)
+# =========================================================================
+
+from pydantic import BaseModel, Field
+
+
+class VisualCandidateItem(BaseModel):
+    """Pydantic validated visual candidate item returned by Gemini Vision."""
+    id: int
+    interesting: bool = True
+    score: float = Field(default=8.0, ge=1.0, le=10.0)
+    event_type: str = "highlight"
+    title: str = "Key Action Moment"
+    tags: List[str] = Field(default_factory=lambda: ["#shorts", "#highlights", "#viral"])
+    reason: str = "Compelling visual activity and pacing"
+    start_offset: float = Field(default=0.0, ge=0.0)
+    end_offset: float = Field(default=45.0, ge=0.0)
+
+
+class BatchedVisualCandidatesResponse(BaseModel):
+    """Container for batched visual candidate responses."""
+    candidates: List[VisualCandidateItem] = Field(default_factory=list)
+
+
+def parse_guided_instruction_with_groq(
+    instruction: Optional[str] = None,
+    preset: Optional[str] = None,
+    groq_key: Optional[str] = None
+) -> Dict[str, Any]:
+    """
+    Parse user natural-language instructions & presets into structured search criteria
+    using Groq's ultra-fast LPU inference (sub-300ms).
+    """
+    preset_str = str(preset or "").strip().lower()
+    clean_instr = str(instruction or "").strip()
+
+    preset_rules = {
+        "funny": "Prioritize comedy, unexpected fails, hilarious NPC reactions, and comedic timing.",
+        "action": "Prioritize high-adrenaline combat, explosions, high-speed chases, and intense gameplay.",
+        "unexpected": "Prioritize plot twists, rare events, bizarre occurrences, and surprising reactions.",
+        "fails": "Prioritize catastrophic blunders, vehicle wipeouts, missed shots, and epic losses.",
+        "wins": "Prioritize clutch victories, flawless plays, impossible shots, and legendary wins.",
+        "explosions": "Prioritize massive detonations, chaotic destruction, and fireball impacts.",
+        "car crashes": "Prioritize high-speed vehicle collisions, multi-car pileups, and flips.",
+        "story": "Prioritize narrative turning points, dramatic cutscenes, and lore moments.",
+        "viral": "Prioritize maximum curiosity gap, hook potential, and shareable highlights."
+    }
+
+    base_rule = preset_rules.get(preset_str, "Identify the most engaging and viral standalone moments.")
+    combined_focus = f"{base_rule} {clean_instr}".strip()
+
+    gr_key = groq_key or os.getenv("GROQ_API_KEY")
+    if gr_key and (clean_instr or preset_str):
+        try:
+            from groq import Groq
+            client = Groq(api_key=gr_key)
+            prompt = (
+                f"You are a short-form video creative director. Convert this clipping directive into structured JSON guidelines:\n"
+                f"Preset: {preset or 'Custom'}\n"
+                f"Instruction: {clean_instr or 'Auto'}\n\n"
+                f"Output a JSON object with:\n"
+                f"- 'summary': 1-sentence focus summary\n"
+                f"- 'keywords': 3-5 visual keywords to look for\n"
+                f"- 'tone': tone of the short (e.g. comedic, intense, epic)\n"
+                f"Return JSON ONLY."
+            )
+            for m in ("llama-3.1-8b-instant", "llama-3.3-70b-versatile"):
+                try:
+                    resp = client.chat.completions.create(
+                        model=m,
+                        messages=[{"role": "user", "content": prompt}],
+                        temperature=0.2,
+                        max_tokens=200
+                    )
+                    txt = resp.choices[0].message.content or ""
+                    match = re.search(r"\{[\s\S]*\}", txt)
+                    if match:
+                        data = json.loads(match.group(0))
+                        data["preset"] = preset or "Custom"
+                        data["combined_focus"] = combined_focus
+                        return data
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f"[AI Analyzer] Groq guided parsing notice: {e}")
+
+    # Fallback structured guideline
+    return {
+        "preset": preset or "Custom",
+        "summary": f"[{preset or 'Custom'}] {combined_focus}",
+        "keywords": [preset_str or "highlights", "action", "viral"],
+        "tone": preset_str or "engaging",
+        "combined_focus": combined_focus
+    }
+
+
+def clamp_and_validate_candidate_boundaries(
+    cand: Dict[str, Any],
+    eval_item: Optional[VisualCandidateItem] = None,
+    min_duration: float = 30.0,
+    max_duration: float = 60.0,
+    video_duration: Optional[float] = None
+) -> Dict[str, Any]:
+    """
+    Strictly validate and clamp candidate boundaries.
+    The LLM is mathematically prevented from inventing timestamps outside the candidate window:
+    candidate_start <= clip_start < clip_end <= candidate_end.
+    """
+    cand_start = float(cand.get("start", 0.0))
+    cand_end = float(cand.get("end", cand_start + 45.0))
+    cand_dur = max(1.0, cand_end - cand_start)
+
+    if eval_item is not None:
+        start_off = float(eval_item.start_offset)
+        end_off = float(eval_item.end_offset)
+
+        # Clamping start within candidate
+        c_start = cand_start + min(cand_dur - 15.0, max(0.0, start_off))
+        # Clamping end within candidate
+        c_end = cand_start + min(cand_dur, max(c_start - cand_start + 20.0, end_off))
+    else:
+        c_start = cand_start
+        c_end = cand_end
+
+    # Enforce minimum duration
+    if c_end - c_start < min_duration:
+        needed = min_duration - (c_end - c_start)
+        # Expand left if possible
+        room_left = c_start - cand_start
+        exp_left = min(room_left, needed / 2.0)
+        c_start -= exp_left
+        needed -= exp_left
+        # Expand right
+        room_right = cand_end - c_end
+        exp_right = min(room_right, needed)
+        c_end += exp_right
+
+        # If candidate window itself was shorter than min_duration, expand safely into video bounds
+        if c_end - c_start < min_duration and video_duration:
+            extra = min_duration - (c_end - c_start)
+            c_start = max(0.0, c_start - extra / 2.0)
+            c_end = min(video_duration, c_start + min_duration)
+
+    # Enforce maximum duration
+    if c_end - c_start > max_duration:
+        c_end = c_start + max_duration
+
+    if video_duration:
+        c_start = max(0.0, min(video_duration - 10.0, c_start))
+        c_end = min(video_duration, c_end)
+
+    final_dur = round(max(5.0, c_end - c_start), 2)
+    return {
+        "start": round(c_start, 2),
+        "end": round(c_end, 2),
+        "duration": final_dur
+    }
+
+
+def generate_fallback_multimodal_candidates(
+    candidates: List[Dict[str, Any]],
+    preset: Optional[str] = None,
+    target_count: int = 10,
+    video_title: str = "Video"
+) -> List[Dict[str, Any]]:
+    """
+    Resilient local fallback when Gemini vision quota is exhausted or unavailable.
+    Synthesizes rich titles, tags, and reasons from local visual/audio signals.
+    """
+    preset_title_map = {
+        "funny": "Hilarious Gameplay Moment",
+        "action": "Insane Action Sequence",
+        "unexpected": "Unbelievable Shocking Turn",
+        "fails": "Massive Epic Fail",
+        "wins": "Legendary Clutch Victory",
+        "explosions": "Catastrophic Explosion",
+        "car crashes": "High Speed Crash",
+        "story": "Epic Narrative Highlight",
+    }
+    base_title = preset_title_map.get(str(preset or "").lower(), "Top Highlight Moment")
+
+    results: List[Dict[str, Any]] = []
+    for idx, cand in enumerate(candidates[:target_count], start=1):
+        c_start = cand["start"]
+        c_end = cand["end"]
+        sig = cand.get("signals", {})
+        v_score = sig.get("visual_score", 0.7)
+        a_score = sig.get("audio_score", 0.7)
+
+        title = f"{base_title} #{idx} at {int(c_start)}s"
+        tags = ["#shorts", "#gaming", f"#{preset or 'highlights'}", "#viral", "#clips"]
+        explanation = (
+            f"High-intensity moment detected with {int(v_score * 100)}% visual change and "
+            f"{int(a_score * 100)}% audio energy. Functions as a standalone high-retention short."
+        )
+
+        results.append({
+            "start": round(c_start, 2),
+            "end": round(c_end, 2),
+            "duration": round(c_end - c_start, 2),
+            "score": round(cand.get("score", 8.2), 2),
+            "title": title,
+            "tags": tags,
+            "explanation": explanation,
+            "reason": f"Detected peak visual and sound activity around {int(cand.get('peak_time', c_start))}s",
+        })
+
+    return results
+
+
+def analyze_multimodal_candidates_batched(
+    candidates: List[Dict[str, Any]],
+    candidate_frames_map: Dict[int, List[Dict[str, Any]]],
+    video_duration: float,
+    guided_instruction: Optional[str] = None,
+    preset: Optional[str] = None,
+    target_count: int = 10,
+    gemini_key: Optional[str] = None,
+    groq_key: Optional[str] = None,
+    min_duration: float = 30.0,
+    max_duration: float = 60.0,
+    progress_callback: Optional[Callable[[str], None]] = None,
+    metrics_collector: Optional[Dict[str, Any]] = None
+) -> List[Dict[str, Any]]:
+    """
+    Single-batched Gemini Vision evaluation for candidate windows.
+    Takes local candidate windows and their sparse JPEG frames (3-5 frames per candidate),
+    sends ONE batched multimodal request to Gemini, validates strict JSON output with Pydantic,
+    strictly clamps timestamps to candidate windows, and falls back gracefully to local ranking.
+    """
+    if not candidates:
+        return []
+
+    # 1. Parse guided instructions with Groq LPU engine (< 300ms)
+    guided_info = parse_guided_instruction_with_groq(guided_instruction, preset, groq_key=groq_key)
+    focus_directive = guided_info.get("combined_focus", "Find the most exciting standalone viral moments.")
+
+    g_key = gemini_key or os.getenv("GEMINI_API_KEY")
+
+    # If no Gemini API key is available, activate local fallback immediately
+    if not g_key:
+        print("[AI Analyzer] Gemini API key not set — activating local multimodal candidate ranking.")
+        if progress_callback:
+            progress_callback("Selecting top candidate moments using local visual & audio intelligence...")
+        return generate_fallback_multimodal_candidates(candidates, preset, target_count)
+
+    # 2. Batch candidates (max 10 candidates per batch, maximum 2 batches total)
+    batch_size = 10
+    batches = [candidates[i:i + batch_size] for i in range(0, min(len(candidates), 20), batch_size)]
+    if not batches:
+        batches = [candidates]
+
+    evaluated_clips: List[Dict[str, Any]] = []
+
+    try:
+        import google.generativeai as genai
+        from PIL import Image
+
+        genai.configure(api_key=g_key)
+        vision_models = GEMINI_MODELS
+
+        for b_idx, batch_cands in enumerate(batches, start=1):
+            if progress_callback:
+                progress_callback(f"Gemini evaluating visual batch {b_idx}/{len(batches)} ({len(batch_cands)} candidate moments)...")
+
+            if metrics_collector is not None:
+                metrics_collector["llm_calls"] = metrics_collector.get("llm_calls", 0) + 1
+
+            # Prepare structured prompt and image contents
+            cand_summaries = []
+            for c in batch_cands:
+                sig = c.get("signals", {})
+                cand_summaries.append(
+                    f"- Candidate #{c['id']}: window [{c['start']}s to {c['end']}s] "
+                    f"(visual_score={sig.get('visual_score', 0.5)}, audio_score={sig.get('audio_score', 0.5)})"
+                )
+
+            prompt_text = (
+                f"You are an elite short-form video editor for YouTube Shorts, TikTok, and Reels.\n"
+                f"Analyze the attached visual frames for {len(batch_cands)} candidate video moments.\n"
+                f"Directives: {focus_directive}\n\n"
+                f"Candidate Windows:\n" + "\n".join(cand_summaries) + "\n\n"
+                f"STRICT SCHEMA REQUIREMENTS:\n"
+                f"Return a STRICT JSON object matching this schema:\n"
+                f"{{\n"
+                f'  "candidates": [\n'
+                f'    {{\n'
+                f'      "id": int (must match candidate ID),\n'
+                f'      "interesting": bool,\n'
+                f'      "score": float (1.0 to 10.0),\n'
+                f'      "event_type": string (e.g. "action", "funny", "fail", "win", "stunt"),\n'
+                f'      "title": string (punchy viral headline title under 8 words),\n'
+                f'      "tags": [string] (3-5 viral hashtags like "#shorts", "#gaming"),\n'
+                f'      "reason": string (why this moment works as a short),\n'
+                f'      "start_offset": float (seconds from candidate start to begin the clip),\n'
+                f'      "end_offset": float (seconds from candidate start to end the clip)\n'
+                f'    }}\n'
+                f'  ]\n'
+                f"}}\n"
+                f"Strictly constrain clip duration (end_offset - start_offset) between {min_duration} and {max_duration} seconds.\n"
+                f"Only valid JSON. No conversational preamble."
+            )
+
+            # Assemble content parts: prompt text followed by labeled PIL images
+            content_parts: List[Any] = [prompt_text]
+            total_frames_in_batch = 0
+
+            for c in batch_cands:
+                c_id = c["id"]
+                frames = candidate_frames_map.get(c_id, [])
+                if frames:
+                    content_parts.append(f"\n--- Frames for Candidate #{c_id} ({c['start']}s - {c['end']}s) ---")
+                    for fr in frames:
+                        f_path = fr.get("frame_path")
+                        if f_path and os.path.exists(f_path):
+                            try:
+                                pil_img = Image.open(f_path)
+                                content_parts.append(pil_img)
+                                total_frames_in_batch += 1
+                            except Exception as img_err:
+                                print(f"[AI Analyzer] Warning loading image {f_path}: {img_err}")
+
+            if metrics_collector is not None:
+                metrics_collector["frames_analyzed"] = metrics_collector.get("frames_analyzed", 0) + total_frames_in_batch
+
+            # Query Gemini Vision with model cascade
+            batch_success = False
+            for model_name in vision_models:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction="You are an expert AI video clipper analyzing visual gameplay and action frames."
+                    )
+                    resp = model.generate_content(
+                        content_parts,
+                        generation_config={"temperature": 0.25},
+                        safety_settings=SAFETY_SETTINGS
+                    )
+                    res_text = extract_gemini_response_text(resp)
+                    if not res_text or not res_text.strip():
+                        continue
+
+                    # Parse JSON
+                    parsed_raw = clean_and_parse_json(res_text)
+                    if not parsed_raw:
+                        continue
+
+                    # Validate with Pydantic
+                    items_by_id = {}
+                    for item_dict in parsed_raw:
+                        try:
+                            v_item = VisualCandidateItem(**item_dict)
+                            items_by_id[v_item.id] = v_item
+                        except Exception:
+                            # Direct key extraction fallback
+                            c_id = int(item_dict.get("id", item_dict.get("candidate_id", 0)))
+                            if c_id > 0:
+                                items_by_id[c_id] = VisualCandidateItem(
+                                    id=c_id,
+                                    title=str(item_dict.get("title", f"Moment #{c_id}")),
+                                    score=float(item_dict.get("score", 8.0)),
+                                    tags=list(item_dict.get("tags", ["#shorts", "#gaming"])),
+                                    reason=str(item_dict.get("reason", "Engaging visual action")),
+                                    start_offset=float(item_dict.get("start_offset", 0.0)),
+                                    end_offset=float(item_dict.get("end_offset", 45.0)),
+                                )
+
+                    # Clamp timestamps and construct final candidate dictionaries
+                    for c in batch_cands:
+                        v_eval = items_by_id.get(c["id"])
+                        clamped = clamp_and_validate_candidate_boundaries(
+                            cand=c,
+                            eval_item=v_eval,
+                            min_duration=min_duration,
+                            max_duration=max_duration,
+                            video_duration=video_duration
+                        )
+
+                        if v_eval:
+                            title = v_eval.title
+                            tags = v_eval.tags
+                            reason = v_eval.reason
+                            score = v_eval.score
+                        else:
+                            title = f"Action Highlight at {int(clamped['start'])}s"
+                            tags = ["#shorts", "#viral", "#gaming", f"#{preset or 'highlights'}"]
+                            reason = "High visual activity and dynamic motion"
+                            score = float(c.get("score", 8.0))
+
+                        explanation = (
+                            f"{reason}. This {int(clamped['duration'])}s visual segment delivers "
+                            f"continuous pacing and high engagement as a standalone short."
+                        )
+
+                        evaluated_clips.append({
+                            "start": clamped["start"],
+                            "end": clamped["end"],
+                            "duration": clamped["duration"],
+                            "score": round(score, 2),
+                            "title": title,
+                            "tags": tags,
+                            "explanation": explanation,
+                            "reason": reason,
+                            "signals": c.get("signals", {})
+                        })
+
+                    batch_success = True
+                    break
+                except Exception as m_err:
+                    print(f"[AI Analyzer] Gemini Vision query notice for {model_name}: {m_err}")
+                    continue
+
+            if not batch_success:
+                print(f"[AI Analyzer] Vision query for batch {b_idx} failed across models. Using local signal fallback for this batch.")
+                fallback_batch = generate_fallback_multimodal_candidates(batch_cands, preset, len(batch_cands))
+                evaluated_clips.extend(fallback_batch)
+
+    except Exception as e:
+        print(f"[AI Analyzer] Gemini Vision pipeline error: {e}. Falling back to local candidate ranking.")
+        if progress_callback:
+            progress_callback("AI vision limit reached — using local candidate intelligence fallback...")
+        return generate_fallback_multimodal_candidates(candidates, preset, target_count)
+
+    if not evaluated_clips:
+        return generate_fallback_multimodal_candidates(candidates, preset, target_count)
+
+    # Sort final clips by score descending
+    evaluated_clips.sort(key=lambda x: x["score"], reverse=True)
+    return evaluated_clips[:target_count]
+

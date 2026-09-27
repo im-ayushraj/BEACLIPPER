@@ -259,7 +259,12 @@ export default function DashboardPage() {
     url: string,
     count: number,
     aspectRatio: string = "original",
-    subtitles: boolean = true
+    subtitles: boolean = true,
+    mode: string = "AUTO",
+    instruction?: string,
+    preset?: string,
+    minDuration?: number,
+    maxDuration?: number
   ) => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
@@ -267,7 +272,18 @@ export default function DashboardPage() {
 
     try {
       const token = await getToken();
-      const res = await processVideo(url, count, token, aspectRatio, subtitles);
+      const res = await processVideo(
+        url,
+        count,
+        token,
+        aspectRatio,
+        subtitles,
+        mode,
+        instruction,
+        preset,
+        minDuration,
+        maxDuration
+      );
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits
@@ -321,7 +337,12 @@ export default function DashboardPage() {
     file: File,
     count: number,
     aspectRatio: string = "original",
-    subtitles: boolean = true
+    subtitles: boolean = true,
+    mode: string = "AUTO",
+    instruction?: string,
+    preset?: string,
+    minDuration?: number,
+    maxDuration?: number
   ) => {
     setErrorMessage(null);
     setInsufficientCreditsError(null);
@@ -330,9 +351,21 @@ export default function DashboardPage() {
 
     try {
       const token = await getToken();
-      const res = await uploadAndProcessVideo(file, count, token, (pct) => {
-        setUploadProgress(pct);
-      }, aspectRatio, subtitles);
+      const res = await uploadAndProcessVideo(
+        file,
+        count,
+        token,
+        (pct) => {
+          setUploadProgress(pct);
+        },
+        aspectRatio,
+        subtitles,
+        mode,
+        instruction,
+        preset,
+        minDuration,
+        maxDuration
+      );
       const jobId = res.job_id;
 
       // Optimistically update or re-fetch credits

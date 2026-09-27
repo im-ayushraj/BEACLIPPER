@@ -143,6 +143,11 @@ class ProcessRequest(BaseModel):
     count: int = 10
     aspect_ratio: Optional[str] = "original"
     subtitles: Optional[bool] = True
+    mode: Optional[str] = "AUTO"
+    instruction: Optional[str] = None
+    preset: Optional[str] = None
+    min_duration: Optional[float] = 30.0
+    max_duration: Optional[float] = 60.0
 
 
 def init_job_steps() -> Dict[str, Dict[str, Any]]:
@@ -224,7 +229,12 @@ def run_pipeline_task(job_id: str, url: str, count: int, user_id: str = "guest_u
             target_clip_count=count,
             status_callback=status_callback,
             aspect_ratio=job.get("aspect_ratio", "original"),
-            burn_subtitles=job.get("subtitles", True)
+            burn_subtitles=job.get("subtitles", True),
+            mode=job.get("mode", "AUTO"),
+            instruction=job.get("instruction"),
+            preset=job.get("preset"),
+            min_duration=float(job.get("min_duration", 30.0)),
+            max_duration=float(job.get("max_duration", 60.0)),
         )
         all_clips = result.get("clips", [])
         for c in all_clips:
@@ -1411,6 +1421,11 @@ def process_video(
         "count": req.count,
         "aspect_ratio": req.aspect_ratio or "original",
         "subtitles": True if req.subtitles is None else bool(req.subtitles),
+        "mode": req.mode or "AUTO",
+        "instruction": req.instruction,
+        "preset": req.preset,
+        "min_duration": float(req.min_duration or 30.0),
+        "max_duration": float(req.max_duration or 60.0),
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline...",
@@ -1483,6 +1498,11 @@ async def process_video_upload(
     count: int = Form(10),
     aspect_ratio: str = Form("original"),
     subtitles: bool = Form(True),
+    mode: str = Form("AUTO"),
+    instruction: Optional[str] = Form(None),
+    preset: Optional[str] = Form(None),
+    min_duration: float = Form(30.0),
+    max_duration: float = Form(60.0),
     authorization: Optional[str] = Header(None),
     x_device_id: Optional[str] = Header(None, alias="X-Device-Id"),
     x_idempotency_key: Optional[str] = Header(None, alias="X-Idempotency-Key")
@@ -1611,6 +1631,11 @@ async def process_video_upload(
         "count": count,
         "aspect_ratio": aspect_ratio or "original",
         "subtitles": bool(subtitles),
+        "mode": mode or "AUTO",
+        "instruction": instruction,
+        "preset": preset,
+        "min_duration": float(min_duration or 30.0),
+        "max_duration": float(max_duration or 60.0),
         "status": "processing",
         "stage": "video",
         "current_message": "Initializing clipping pipeline on uploaded video...",
