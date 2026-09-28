@@ -2157,5 +2157,6 @@ def download_single_clip(
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
-    print(f"Starting AI Video Clipper Web UI on http://localhost:{port}")
-    uvicorn.run("web:app", host="0.0.0.0", port=port, reload=False)
+    reload_enabled = os.getenv("RELOAD", "true").lower() in ("true", "1", "yes")
+    print(f"Starting AI Video Clipper Web UI on http://localhost:{port} (reload={reload_enabled})")
+    uvicorn.run("web:app", host="0.0.0.0", port=port, reload=reload_enabled)
